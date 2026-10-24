@@ -50,7 +50,7 @@ internal static class ScreenshotFiles
     /// </summary>
     public static int PurgeSaved(string folder, int retentionDays)
     {
-        var days = Math.Clamp(retentionDays, 1, 3650);
+        var days = Math.Clamp(retentionDays, AppSettings.MinRetentionDays, AppSettings.MaxRetentionDays);
         try
         {
             if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))

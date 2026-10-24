@@ -465,7 +465,7 @@ public sealed class AppHost
             return error;
         }
 
-        next.RetentionDays = Math.Clamp(next.RetentionDays, 1, 3650);
+        next.RetentionDays = Math.Clamp(next.RetentionDays, AppSettings.MinRetentionDays, AppSettings.MaxRetentionDays);
         next.IgnoredProcesses = ProcessNames.Normalize(next.IgnoredProcesses);
         next.SaveFolder = (next.SaveFolder ?? "").Trim();
         if (next.SaveScreenshots)
@@ -829,14 +829,12 @@ public sealed class AppHost
         }
     }
 
-    public void PinFile(string? path)
+    /// <summary>
+    /// 贴图窗口（文字/图片两种形态）共用的生命周期接线：关闭即注销、复制走后台、
+    /// AI 识图开主窗口。此前这段接线在 PinFile/PinText 里逐行重复，改一处漏一处。
+    /// </summary>
+    private PinWindow CreatePinnedWindow()
     {
-        if (string.IsNullOrEmpty(path) || !File.Exists(path))
-        {
-            _toast.Show("这张图片已经找不到了");
-            return;
-        }
-
         var window = new PinWindow();
         window.Dismissed += pin =>
         {
@@ -852,6 +850,18 @@ public sealed class AppHost
             _clipboard.SetText(copied);
             _toast.Show("已复制便签文字");
         };
+        return window;
+    }
+
+    public void PinFile(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            _toast.Show("这张图片已经找不到了");
+            return;
+        }
+
+        var window = CreatePinnedWindow();
         try
         {
             window.ShowFile(path);
@@ -878,21 +888,7 @@ public sealed class AppHost
             return;
         }
 
-        var window = new PinWindow();
-        window.Dismissed += pin =>
-        {
-            lock (_pins)
-            {
-                _pins.Remove(pin);
-            }
-        };
-        window.CopyRequested += pinned => Track(CopyPinnedAsync(pinned));
-        window.AiVisionRequested += bytes => OpenAiVision(bytes, null);
-        window.CopyTextRequested += copied =>
-        {
-            _clipboard.SetText(copied);
-            _toast.Show("已复制便签文字");
-        };
+        var window = CreatePinnedWindow();
         window.ShowText(text);
         lock (_pins)
         {

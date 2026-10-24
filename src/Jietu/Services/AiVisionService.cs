@@ -14,10 +14,10 @@ internal static class AiVisionService
     {
         if (string.IsNullOrWhiteSpace(settings.AiApiKey))
         {
-            return "【提示】尚未配置 AI API Key。\n请在系统托盘右键“设置”中配置自定义 AI 视觉接口 (支持兼容 OpenAI / DeepSeek / Ollama / OneAPI / 硅基流动等格式)。";
+            return AiVisionContract.HintPrefix + "尚未配置 AI API Key。\n请在系统托盘右键“设置”中配置自定义 AI 视觉接口 (支持兼容 OpenAI / DeepSeek / Ollama / OneAPI / 硅基流动等格式)。";
         }
 
-        var endpoint = settings.AiApiUrl?.TrimEnd('/') ?? "https://api.openai.com/v1";
+        var endpoint = settings.AiApiUrl?.TrimEnd('/') ?? AppSettings.DefaultAiApiUrl;
         var url = endpoint.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)
             ? endpoint
             : endpoint + "/chat/completions";
@@ -27,21 +27,21 @@ internal static class AiVisionService
         if (!Uri.TryCreate(url, UriKind.Absolute, out var requestUri)
             || (requestUri.Scheme != Uri.UriSchemeHttp && requestUri.Scheme != Uri.UriSchemeHttps))
         {
-            return "【提示】AI 接口地址无效：" + settings.AiApiUrl + "\n请在“设置”中填写以 http:// 或 https:// 开头的完整接口地址。";
+            return AiVisionContract.HintPrefix + "AI 接口地址无效：" + settings.AiApiUrl + "\n请在“设置”中填写以 http:// 或 https:// 开头的完整接口地址。";
         }
 
         // http 明文端点会把 API Key 与整张截图一起明文出网（代理/网关日志可见），
         // 默认拒绝；仅放行本机回环，兼容 Ollama 等本地推理服务。
         if (requestUri.Scheme == Uri.UriSchemeHttp && !IsLoopbackHost(requestUri.Host))
         {
-            return "【提示】AI 接口地址使用了 http:// 明文端点，API Key 与截图会以明文传输。\n请在“设置”中改用 https:// 地址；本地推理服务（Ollama 等）可使用 http://127.0.0.1 或 http://localhost。";
+            return AiVisionContract.HintPrefix + "AI 接口地址使用了 http:// 明文端点，API Key 与截图会以明文传输。\n请在“设置”中改用 https:// 地址；本地推理服务（Ollama 等）可使用 http://127.0.0.1 或 http://localhost。";
         }
 
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
         {
             writer.WriteStartObject();
-            writer.WriteString("model", string.IsNullOrWhiteSpace(settings.AiModel) ? "gpt-4o-mini" : settings.AiModel.Trim());
+            writer.WriteString("model", string.IsNullOrWhiteSpace(settings.AiModel) ? AppSettings.DefaultAiModel : settings.AiModel.Trim());
             writer.WriteStartArray("messages");
             writer.WriteStartObject();
             writer.WriteString("role", "user");
@@ -86,12 +86,12 @@ internal static class AiVisionService
 
             if (!response.IsSuccessStatusCode)
             {
-                return $"AI 请求失败 (状态码 {response.StatusCode}):\n{respText}";
+                return $"{AiVisionContract.RequestFailedPrefix} (状态码 {response.StatusCode}):\n{respText}";
             }
 
             var node = JsonNode.Parse(respText);
             var answer = node?["choices"]?[0]?["message"]?["content"]?.GetValue<string>();
-            return string.IsNullOrWhiteSpace(answer) ? "AI 未返回有效内容。" : answer.Trim();
+            return string.IsNullOrWhiteSpace(answer) ? AiVisionContract.NoContentPrefix + "有效内容。" : answer.Trim();
         }
         catch (OperationCanceledException)
         {
@@ -99,7 +99,7 @@ internal static class AiVisionService
         }
         catch (Exception ex)
         {
-            return "网络或接口请求异常: " + ex.Message;
+            return AiVisionContract.NetworkErrorPrefix + ": " + ex.Message;
         }
     }
 
@@ -109,4 +109,18 @@ internal static class AiVisionService
            || host.Equals("::1", StringComparison.Ordinal)
            || host.Equals("[::1]", StringComparison.Ordinal)
            || host.StartsWith("127.", StringComparison.Ordinal);
+}
+
+/// <summary>
+/// AI 结果文案前缀契约：AskVisionAsync 以带前缀的文案表达“需要配置/请求失败”，
+/// AiVisionWindow.Classify 靠前缀归类状态色。此前两侧各自硬编码字符串，改一个字即双双失效；
+/// 收敛到这里后，窗口与服务共享同一份定义。
+/// </summary>
+internal static class AiVisionContract
+{
+    public const string HintPrefix = "【提示】";
+    public const string RequestFailedPrefix = "AI 请求失败";
+    public const string NetworkErrorPrefix = "网络或接口请求异常";
+    public const string NoContentPrefix = "AI 未返回";
+    public const string InvokeErrorPrefix = "调用发生异常";
 }

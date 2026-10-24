@@ -465,7 +465,7 @@ public sealed class HistoryStore : IDisposable
 
     public int Purge(int retentionDays)
     {
-        var days = Math.Clamp(retentionDays, 1, 3650);
+        var days = Math.Clamp(retentionDays, AppSettings.MinRetentionDays, AppSettings.MaxRetentionDays);
         var cutoff = DateTimeOffset.UtcNow.AddDays(-days).ToUnixTimeMilliseconds();
         List<string> paths;
         int deleted;

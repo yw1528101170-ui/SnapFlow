@@ -74,14 +74,12 @@ public sealed partial class AiVisionWindow : Window
         ResultText.Text = string.Empty;
 
         var settings = _host.Settings;
-        var model = string.IsNullOrWhiteSpace(settings.AiModel) ? "gpt-4o-mini" : settings.AiModel.Trim();
+        var model = string.IsNullOrWhiteSpace(settings.AiModel) ? AppSettings.DefaultAiModel : settings.AiModel.Trim();
         ModelBadgeText.Text = model;
         TitleMetaText.Text = model + " · 截屏理解";
 
         var prompt = string.IsNullOrWhiteSpace(customPrompt)
-            ? (string.IsNullOrWhiteSpace(settings.AiPrompt)
-                ? "请分析并总结这张截图的内容：若是代码请解释核心逻辑与排查建议，若是表格或图文请提取关键信息。"
-                : settings.AiPrompt)
+            ? (string.IsNullOrWhiteSpace(settings.AiPrompt) ? AppSettings.DefaultAiPrompt : settings.AiPrompt)
             : customPrompt;
 
         PromptInput.Text = prompt;
@@ -189,7 +187,7 @@ public sealed partial class AiVisionWindow : Window
         }
         catch (Exception ex)
         {
-            answer = "调用发生异常: " + ex.Message;
+            answer = AiVisionContract.InvokeErrorPrefix + ": " + ex.Message;
         }
 
         if (token != _askToken)
@@ -289,15 +287,15 @@ public sealed partial class AiVisionWindow : Window
 
     private static (string Label, string BrushKey) Classify(string answer)
     {
-        if (answer.StartsWith("【提示】", StringComparison.Ordinal))
+        if (answer.StartsWith(AiVisionContract.HintPrefix, StringComparison.Ordinal))
         {
             return ("需要配置", "SnapFlowWarningBrush");
         }
 
-        if (answer.StartsWith("AI 请求失败", StringComparison.Ordinal)
-            || answer.StartsWith("网络或接口请求异常", StringComparison.Ordinal)
-            || answer.StartsWith("调用发生异常", StringComparison.Ordinal)
-            || answer.StartsWith("AI 未返回", StringComparison.Ordinal))
+        if (answer.StartsWith(AiVisionContract.RequestFailedPrefix, StringComparison.Ordinal)
+            || answer.StartsWith(AiVisionContract.NetworkErrorPrefix, StringComparison.Ordinal)
+            || answer.StartsWith(AiVisionContract.InvokeErrorPrefix, StringComparison.Ordinal)
+            || answer.StartsWith(AiVisionContract.NoContentPrefix, StringComparison.Ordinal))
         {
             return ("请求失败", "SnapFlowDangerBrush");
         }

@@ -113,12 +113,10 @@ public sealed partial class SettingsWindow : Window
                 _ => 0
             };
             FolderBox.Text = string.IsNullOrWhiteSpace(settings.SaveFolder) ? ScreenshotFiles.DefaultFolder : settings.SaveFolder;
-            AiUrlBox.Text = string.IsNullOrWhiteSpace(settings.AiApiUrl) ? "https://api.openai.com/v1" : settings.AiApiUrl;
+            AiUrlBox.Text = string.IsNullOrWhiteSpace(settings.AiApiUrl) ? AppSettings.DefaultAiApiUrl : settings.AiApiUrl;
             AiKeyBox.Password = settings.AiApiKey ?? "";
-            AiModelBox.Text = string.IsNullOrWhiteSpace(settings.AiModel) ? "gpt-4o-mini" : settings.AiModel;
-            AiPromptBox.Text = string.IsNullOrWhiteSpace(settings.AiPrompt)
-                ? "请分析并总结这张截图的内容：若是代码请解释核心逻辑与排查建议，若是表格或图文请提取关键信息。"
-                : settings.AiPrompt;
+            AiModelBox.Text = string.IsNullOrWhiteSpace(settings.AiModel) ? AppSettings.DefaultAiModel : settings.AiModel;
+            AiPromptBox.Text = string.IsNullOrWhiteSpace(settings.AiPrompt) ? AppSettings.DefaultAiPrompt : settings.AiPrompt;
 
             _ignoredProcesses.Clear();
             _ignoredProcesses.AddRange(settings.IgnoredProcesses);
@@ -302,7 +300,7 @@ public sealed partial class SettingsWindow : Window
             _restoringRetention = true;
             try
             {
-                RetentionBox.Value = Math.Clamp(_host.Settings.RetentionDays, 1, 3650);
+                RetentionBox.Value = Math.Clamp(_host.Settings.RetentionDays, AppSettings.MinRetentionDays, AppSettings.MaxRetentionDays);
             }
             finally
             {
@@ -485,7 +483,7 @@ public sealed partial class SettingsWindow : Window
         {
             RegionHotkey = _regionHotkey.Trim(),
             HistoryHotkey = _historyHotkey.Trim(),
-            RetentionDays = (int)Math.Clamp(Math.Round(retention), 1, 3650),
+            RetentionDays = (int)Math.Clamp(Math.Round(retention), AppSettings.MinRetentionDays, AppSettings.MaxRetentionDays),
             Paused = _host.IsPaused,
             RunAtStartup = StartupSwitch.IsOn,
             SaveScreenshots = SaveSwitch.IsOn,
@@ -497,12 +495,10 @@ public sealed partial class SettingsWindow : Window
             OsdDisplay = (OsdDisplayBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Primary",
             OsdHideOnCapture = OsdHideOnCaptureSwitch.IsOn,
             MultiMonitorCaptureMode = (MultiMonitorModeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Auto",
-            AiApiUrl = string.IsNullOrWhiteSpace(AiUrlBox.Text) ? "https://api.openai.com/v1" : AiUrlBox.Text.Trim(),
+            AiApiUrl = string.IsNullOrWhiteSpace(AiUrlBox.Text) ? AppSettings.DefaultAiApiUrl : AiUrlBox.Text.Trim(),
             AiApiKey = AiKeyBox.Password.Trim(),
-            AiModel = string.IsNullOrWhiteSpace(AiModelBox.Text) ? "gpt-4o-mini" : AiModelBox.Text.Trim(),
-            AiPrompt = string.IsNullOrWhiteSpace(AiPromptBox.Text)
-                ? "请分析并总结这张截图的内容：若是代码请解释核心逻辑与排查建议，若是表格或图文请提取关键信息。"
-                : AiPromptBox.Text.Trim(),
+            AiModel = string.IsNullOrWhiteSpace(AiModelBox.Text) ? AppSettings.DefaultAiModel : AiModelBox.Text.Trim(),
+            AiPrompt = string.IsNullOrWhiteSpace(AiPromptBox.Text) ? AppSettings.DefaultAiPrompt : AiPromptBox.Text.Trim(),
         };
 
         var error = _host.TryApply(next);
@@ -858,9 +854,9 @@ public sealed partial class SettingsWindow : Window
 
     private async void OnTestAiConnection(object sender, RoutedEventArgs e)
     {
-        var url = string.IsNullOrWhiteSpace(AiUrlBox.Text) ? "https://api.openai.com/v1" : AiUrlBox.Text.Trim();
+        var url = string.IsNullOrWhiteSpace(AiUrlBox.Text) ? AppSettings.DefaultAiApiUrl : AiUrlBox.Text.Trim();
         var key = AiKeyBox.Password.Trim();
-        var model = string.IsNullOrWhiteSpace(AiModelBox.Text) ? "gpt-4o-mini" : AiModelBox.Text.Trim();
+        var model = string.IsNullOrWhiteSpace(AiModelBox.Text) ? AppSettings.DefaultAiModel : AiModelBox.Text.Trim();
 
         AiTestButton.IsEnabled = false;
         AiTestProgress.Visibility = Visibility.Visible;
