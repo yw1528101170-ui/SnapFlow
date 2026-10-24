@@ -23,7 +23,7 @@ public sealed class AppHost
     private readonly string? _storeRecoveryMessage;
     private readonly ConcurrentDictionary<Task, byte> _background = new();
     private readonly CancellationTokenSource _lifetime = new();
-    private readonly SemaphoreSlim _ocrGate = new(1, 1);
+    private readonly ClipIngestService _ingest;
     private CancellationTokenSource? _captureCts;
     private readonly List<PinWindow> _pins = [];
     private int _captureGeneration;
@@ -53,6 +53,9 @@ public sealed class AppHost
                 }
             });
         _storeRecoveryMessage = HistoryStore.LastRecoveryMessage;
+        _ingest = new ClipIngestService(_store);
+        // 识别在后台线程完成，经 UI 队列推给历史窗口原地刷新
+        _ingest.Recognized += (id, text) => _queue.TryEnqueue(() => _history.NotifyRecognized(id, text));
         Track(Task.Run(() => PurgeAll(_settings.RetentionDays)));
         _history = new HistoryWindow(this);
         _overlay = new OverlayWindow();
@@ -181,7 +184,7 @@ public sealed class AppHost
             _history.Present(PasteTarget.Capture());
         }));
         Track(Task.Run(CaptureService.Warmup));
-        Track(Task.Run(() => RefreshLegacyOcrAsync(_lifetime.Token)));
+        Track(Task.Run(() => _ingest.RefreshLegacyAsync(_lifetime.Token)));
         Log.Info($"SnapFlow ready hwnd={_message.Handle} {_settings.RegionHotkey} {_settings.HistoryHotkey}");
         if (error != null)
         {
@@ -793,26 +796,11 @@ public sealed class AppHost
     {
         try
         {
-            if (clip.Kind == ClipKind.Image && clip.Png == null)
-            {
-                return;
-            }
-
-            string? path = null;
-            if (clip.Kind == ClipKind.Image && clip.Png != null && !_store.ContainsHash(clip.Hash))
-            {
-                path = Path.Combine(AppPaths.Images, Guid.NewGuid().ToString("N") + ".png");
-                await File.WriteAllBytesAsync(path, clip.Png);
-            }
-
-            var added = _store.TryAdd(clip.Kind, clip.Text, path, clip.Hash, ClipSource.Clipboard, html: clip.Html, rtf: clip.Rtf);
+            var added = await _ingest.AddCapturedAsync(clip);
             if (added == null)
             {
-                DeleteUnused(path, null);
                 return;
             }
-
-            DeleteUnused(path, added.ImagePath);
 
             if (added.Kind == ClipKind.Image && clip.Png != null)
             {
@@ -1097,6 +1085,7 @@ public sealed class AppHost
                 pasteBack,
                 _settings,
                 _store,
+                _ingest,
                 _clipboard,
                 _toast,
                 path => PinFile(path),
@@ -1189,110 +1178,11 @@ public sealed class AppHost
         return error == null;
     }
 
-    public void RecognizeImage(string id, byte[] png, bool force = false) => Track(RecognizeAsync(id, png, force));
+    public void RecognizeImage(string id, byte[] png, bool force = false)
+        => Track(Task.Run(() => _ingest.RecognizeAsync(id, png, force, _lifetime.Token)));
 
     private void RememberImage(string id, byte[] png)
-    {
-        Track(RecognizeAsync(id, png));
-    }
-
-    private async Task RecognizeAsync(string id, byte[] png, bool force = false)
-    {
-        // 退出排空契约：Shutdown 会在 UI 线程上同步等待本任务（Task.WaitAll），
-        // 如果 await 的续体还要排队回 UI 线程，就变成「等的人被等」，等待必然超时、
-        // SQLite 连接先被释放、迟到的续体撞上已释放的连接。本方法后续只碰线程安全的
-        // HistoryStore/_queue，续体留在线程池即可。
-        try
-        {
-            if (!force)
-            {
-                var existing = _store.GetText(id);
-                if (!string.IsNullOrWhiteSpace(existing))
-                {
-                    return;
-                }
-            }
-
-            await _ocrGate.WaitAsync(_lifetime.Token).ConfigureAwait(false);
-            try
-            {
-                if (!force)
-                {
-                    var current = _store.GetText(id);
-                    if (!string.IsNullOrWhiteSpace(current))
-                    {
-                        return;
-                    }
-                }
-
-                var text = await OcrService.ReadAsync(png).ConfigureAwait(false);
-                if (!string.IsNullOrWhiteSpace(text) && !_lifetime.IsCancellationRequested)
-                {
-                    _store.SetRecognizedText(id, text, force);
-                    _queue.TryEnqueue(() => _history.NotifyRecognized(id, text));
-                }
-            }
-            finally
-            {
-                _ocrGate.Release();
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception ex)
-        {
-            Log.Info("文字识别失败：" + ex.Message);
-        }
-    }
-
-    /// <summary>
-    /// 启动后空闲时把老管线的识别结果重跑一小批：老版本会在中文之间留下空格，
-    /// 预览看起来像一长串乱码。识别完成后逐条推给已打开的窗口，界面会自己刷新。
-    /// </summary>
-    private async Task RefreshLegacyOcrAsync(CancellationToken token)
-    {
-        try
-        {
-            await Task.Delay(TimeSpan.FromSeconds(6), token).ConfigureAwait(false);
-            var pending = _store.GetLegacyOcrImages(24);
-            Log.Info($"重识别候选图片：{pending.Count}");
-            foreach (var (id, path) in pending)
-            {
-                if (token.IsCancellationRequested)
-                {
-                    return;
-                }
-
-                try
-                {
-                    if (!File.Exists(path))
-                    {
-                        continue;
-                    }
-
-                    var png = await File.ReadAllBytesAsync(path, token).ConfigureAwait(false);
-                    await RecognizeAsync(id, png, force: true).ConfigureAwait(false);
-                    await Task.Delay(200, token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    Log.Info("重识别失败：" + ex.Message);
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception ex)
-        {
-            Log.Info("批量重识别失败：" + ex.Message);
-        }
-    }
+        => Track(Task.Run(() => _ingest.RecognizeAsync(id, png, false, _lifetime.Token)));
 
     private async Task PurgeLoopAsync(CancellationToken token)
     {
@@ -1369,22 +1259,5 @@ public sealed class AppHost
     {
         _settings.OsdHideOnCapture = hide;
         SaveSettings();
-    }
-
-    private static void DeleteUnused(string? written, string? kept)
-    {
-        if (string.IsNullOrEmpty(written) || string.Equals(written, kept, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        try
-        {
-            File.Delete(written);
-        }
-        catch (Exception ex)
-        {
-            Log.Info("删除重复图片失败：" + ex.Message);
-        }
     }
 }

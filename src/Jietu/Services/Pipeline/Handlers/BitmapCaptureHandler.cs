@@ -98,32 +98,9 @@ internal sealed class BitmapCaptureHandler : ICaptureActionHandler
             Log.Error(ex);
         }
 
-        ClipRecord? added = null;
-        var hash = Hashing.OfBytes(png);
-        string? path = null;
-        if (!context.Store.ContainsHash(hash))
-        {
-            path = Path.Combine(AppPaths.Images, Guid.NewGuid().ToString("N") + ".png");
-            try
-            {
-                File.WriteAllBytes(path, png);
-            }
-            catch (Exception ex)
-            {
-                // 写盘失败：不要往库里登记一个指向不存在文件的路径（缩略图仍走内存缓存）。
-                Log.Error(ex);
-                path = null;
-            }
-        }
-
-        // SQLite 异常继续上抛，由 CaptureAsync 的兜底 catch 统一提示「截图失败」。
-        added = context.Store.TryAdd(ClipKind.Image, null, path, hash, ClipSource.Screenshot);
-        if (path != null && added != null && added.ImagePath != path)
-        {
-            try { File.Delete(path); } catch { }
-        }
-
-        var kept = added?.ImagePath ?? path ?? context.Store.ImagePathForHash(hash);
+        // 查重→写盘→登记→清理副本统一走 ClipIngestService；SQLite 异常继续上抛，
+        // 由 CaptureAsync 的兜底 catch 统一提示「截图失败」。
+        var (added, kept) = context.Ingest.StoreImage(png, ClipSource.Screenshot);
 
         var saved = false;
         var failed = false;

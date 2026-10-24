@@ -9,6 +9,9 @@ public sealed class HistoryStore : IDisposable
     private readonly string _imageDirectory;
     private readonly Func<string, bool>? _isFileInUse;
     private readonly object _gate = new();
+
+    /// <summary>历史图片的落盘目录（构造时指定），入库方写文件时从这里取路径。</summary>
+    public string ImageDirectory => _imageDirectory;
     private bool _fts;
     // Dispose 后后台 FTS 校验任务不得再触碰连接：进 _gate 后先看这个标记。
     private volatile bool _disposed;

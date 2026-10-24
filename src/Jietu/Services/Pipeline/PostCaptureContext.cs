@@ -5,6 +5,7 @@ internal sealed record PostCaptureContext(
     PasteTarget PasteBack,
     AppSettings Settings,
     HistoryStore Store,
+    ClipIngestService Ingest,
     ClipboardService Clipboard,
     IToastSink Toast,
     Action<string> PinFileAction,
