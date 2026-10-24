@@ -136,16 +136,36 @@ function Save-Pkg([string]$id, [string]$ver) {
     $url = "https://api.nuget.org/v3-flatcontainer/$($id.ToLower())/$($ver.ToLower())/$name"
     # 每次使用随机临时文件，避免并发运行时互相踩踏
     $probe = Join-Path $env:TEMP ([System.IO.Path]::GetRandomFileName())
-    $headers = & curl.exe -4 -s -D - --tls-max 1.2 -H "Range: bytes=0-0" -o $probe $url
+    $len = -1
+    # CI 出口 IP 可能被 nuget.org 瞬时限流（429），探测也必须重试
+    for ($t = 0; $t -lt 6 -and $len -lt 0; $t++) {
+        if ($t -gt 0) { Start-Sleep -Milliseconds (500 * $t) }
+        $headers = & curl.exe -4 -s -D - --tls-max 1.2 --retry 3 -H "Range: bytes=0-0" -o $probe $url 2>$null
+        $match = [regex]::Match(($headers -join "`n"), "Content-Range:\s*bytes\s+\d+-\d+/(\d+)", "IgnoreCase")
+        if ($match.Success) { $len = [int64]$match.Groups[1].Value }
+    }
     Remove-Item $probe -Force -ErrorAction SilentlyContinue
-    $match = [regex]::Match(($headers -join "`n"), "Content-Range:\s*bytes\s+\d+-\d+/(\d+)", "IgnoreCase")
-    if (-not $match.Success) { Write-Host "SKIP $id $ver"; return $null }
-    $len = [int64]$match.Groups[1].Value
+    if ($len -lt 0) { Write-Host "SKIP $id $ver"; return $null }
     Write-Host "GET $name $len"
     $part = "$file.$([System.IO.Path]::GetRandomFileName()).part"
     if ($len -lt 2500000) {
-        & curl.exe -4 -L --tls-max 1.2 --retry 6 --retry-all-errors -o $part $url
-        if ($LASTEXITCODE -ne 0) { throw "download $name" }
+        # CI 出口 IP 偶发被限流：整包最多再重试 3 轮，失败时带出 curl 退出码与错误文本，
+        # 便于从 CI 注解直接定位（完整日志需要登录才能看）。
+        $ok = $false
+        for ($t = 0; $t -lt 4 -and -not $ok; $t++) {
+            if ($t -gt 0) { Start-Sleep -Seconds (2 * $t); Write-Host "RETRY $name #$t" }
+            $errFile = "$part.err"
+            & curl.exe -4 -L --tls-max 1.2 --retry 6 --retry-all-errors -o $part $url 2>$errFile
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $part)) {
+                $ok = $true
+            }
+            else {
+                $errText = if (Test-Path $errFile) { Get-Content $errFile -Raw } else { "" }
+                Write-Host ("FAIL {0} curl={1} {2}" -f $name, $LASTEXITCODE, ($errText -replace "\s+", " "))
+            }
+            Remove-Item $errFile -Force -ErrorAction SilentlyContinue
+        }
+        if (-not $ok) { throw "download $name (curl exit $LASTEXITCODE)" }
         Move-Item $part $file -Force
     }
     else {

@@ -15,15 +15,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 安装 .NET SDK（按 global.json）
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
 
       - name: 重建离线依赖缓存（SHA-256 全量校验）
-        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-nupkgs.ps1
+        shell: pwsh
+        run: ./scripts/fetch-nupkgs.ps1
 
       - name: 构建（Release）
         run: dotnet build src/Jietu/Jietu.csproj -c Release --nologo
