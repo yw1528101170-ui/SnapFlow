@@ -31,7 +31,28 @@ public partial class App : Application
 
         var host = _host;
         if (host is null)
+        {
+            // AppHost 还没建出来就出错（如消息窗口注册失败）：托盘、热键、任何 UI 都不存在，
+            // 进程继续活着只会是一个占着单实例互斥体的空壳，还会把二次启动拦在门外。
+            // 必须让用户看见原因并以非零码退出。
+            try
+            {
+                NativeMethods.MessageBox(
+                    IntPtr.Zero,
+                    "SnapFlow 启动失败：\n\n"
+                    + (e.Exception?.Message ?? "未知错误")
+                    + "\n\n详情请查看日志：%LOCALAPPDATA%\\SnapFlow\\log.txt",
+                    "SnapFlow - 启动错误",
+                    NativeMethods.MbIconError);
+            }
+            catch
+            {
+                // 连弹窗都失败时只能直接退出。
+            }
+
+            Environment.Exit(1);
             return;
+        }
 
         var now = DateTimeOffset.UtcNow;
         _recentErrors.Enqueue(now);

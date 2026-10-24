@@ -870,6 +870,22 @@ public sealed partial class SettingsWindow : Window
 
         try
         {
+            // 与 AiVisionService 同一规则：http 明文端点会把 API Key 明文出网，仅放行本机回环。
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var baseUri)
+                || (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps))
+            {
+                AiTestStatusText.Text = "✕ 地址无效：请填写以 http:// 或 https:// 开头的完整接口地址";
+                AiTestStatusText.Foreground = (Brush)Application.Current.Resources["SnapFlowDangerBrush"];
+                return;
+            }
+
+            if (baseUri.Scheme == Uri.UriSchemeHttp && !AiVisionService.IsLoopbackHost(baseUri.Host))
+            {
+                AiTestStatusText.Text = "✕ 不支持 http:// 明文端点（API Key 会明文传输），请改用 https://；本地服务可用 http://127.0.0.1";
+                AiTestStatusText.Foreground = (Brush)Application.Current.Resources["SnapFlowDangerBrush"];
+                return;
+            }
+
             var sw = System.Diagnostics.Stopwatch.StartNew();
             using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(8) };
             if (!string.IsNullOrEmpty(key))

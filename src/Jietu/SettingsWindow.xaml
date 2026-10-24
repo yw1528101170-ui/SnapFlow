@@ -455,7 +455,7 @@
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                                             <TextBlock Text="自动保存截图到本地" Style="{StaticResource SettingsRowTitleStyle}"/>
                                             <TextBlock Style="{StaticResource SettingsRowHintStyle}"
-                                                       Text="完成截图时除复制到剪贴板，自动保存一份 PNG 到指定目录"/>
+                                                       Text="完成截图时除复制到剪贴板，自动保存一份 PNG 到指定目录；超期文件与历史记录使用相同的保留天数"/>
                                         </StackPanel>
                                         <ToggleSwitch x:Name="SaveSwitch" Grid.Column="2" OnContent="" OffContent=""
                                                       VerticalAlignment="Center" Toggled="OnSaveToggled"/>
@@ -519,7 +519,7 @@
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                                             <TextBlock Text="历史记录保留天数" Style="{StaticResource SettingsRowTitleStyle}"/>
                                             <TextBlock Style="{StaticResource SettingsRowHintStyle}"
-                                                       Text="未固定的历史记录超期后自动清理（已固定的将永久保留）"/>
+                                                       Text="未固定的历史记录超期后自动清理（已固定的将永久保留）；保存目录中由本应用生成的截图同样按此天数清理"/>
                                         </StackPanel>
                                         <NumberBox x:Name="RetentionBox" Grid.Column="2" Width="110" Minimum="1" Maximum="3650"
                                                    SmallChange="1" ValueChanged="OnRetentionChanged" SpinButtonPlacementMode="Compact"
@@ -590,7 +590,7 @@
                                 <FontIcon Glyph="&#xE72E;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
                                           VerticalAlignment="Top" Margin="0,1,0,0"/>
                                 <TextBlock Grid.Column="1" Style="{StaticResource SettingsRowHintStyle}"
-                                           Text="隐私保护：内置密码管理器与系统密码框识别（尽力过滤，不保证覆盖远程桌面、UAC、浏览器扩展等所有场景）。"/>
+                                           Text="隐私保护：遵循剪贴板「请勿收录」标记（密码管理器行业标准），并内置密码管理器与系统密码框识别（尽力过滤，不保证覆盖远程桌面、UAC、浏览器扩展等所有场景）。"/>
                             </Grid>
                         </Border>
                     </StackPanel>

@@ -9,6 +9,7 @@ internal static class SelfTest
         CheckInteropLayouts(failures);
         CheckSingleInstanceStop(failures);
         CheckFormat(failures);
+        CheckClipboardExclusion(failures);
         CheckDib(failures);
         CheckPixels(failures);
         CheckPicture(failures);
@@ -144,6 +145,91 @@ internal static class SelfTest
         Expect(!SensitiveForeground.BlocksProcess("cmd.exe"), "打开后终端可以记录", failures);
         SensitiveForeground.SetRecordTerminals(false);
         Expect(!SensitiveForeground.IsSensitiveProcess("notepad.exe"), "记事本不在内置名单", failures);
+    }
+
+    /// <summary>
+    /// 剪贴板「请勿收录」契约：密码管理器写入内容时会附带
+    /// ExcludeClipboardContentFromMonitorProcessing 等标记，历史库必须整条跳过，
+    /// 否则一次性密码会明文入库并被全文索引。
+    /// </summary>
+    private static void CheckClipboardExclusion(List<string> failures)
+    {
+        try
+        {
+            var excludeFormat = NativeMethods.RegisterClipboardFormat("ExcludeClipboardContentFromMonitorProcessing");
+            var historyFormat = NativeMethods.RegisterClipboardFormat("CanIncludeInClipboardHistory");
+            Expect(excludeFormat != 0 && historyFormat != 0, "排除格式可注册", failures);
+
+            // 摆一条带排除标记的文本：应被识别为「不要收录」。
+            PutClipboardTextWithFlags("selftest-secret", excludeFormat, BitConverter.GetBytes(1u));
+            Expect(ClipboardService.ClipboardMarkedExcluded(), "排除标记生效", failures);
+
+            // 摆一条普通文本：不应误伤正常复制。
+            PutClipboardTextWithFlags("selftest-plain", 0, null);
+            Expect(!ClipboardService.ClipboardMarkedExcluded(), "无标记不误伤", failures);
+
+            // CanIncludeInClipboardHistory=0 同样表示排除。
+            PutClipboardTextWithFlags("selftest-secret2", historyFormat, BitConverter.GetBytes(0u));
+            Expect(ClipboardService.ClipboardMarkedExcluded(), "历史标记 0 排除", failures);
+        }
+        catch (Exception ex)
+        {
+            failures.Add("剪贴板排除: " + ex.Message);
+        }
+        finally
+        {
+            // 清掉测试内容，不在打包机上留下痕迹。
+            try
+            {
+                if (NativeMethods.OpenClipboard(IntPtr.Zero))
+                {
+                    try
+                    {
+                        NativeMethods.EmptyClipboard();
+                    }
+                    finally
+                    {
+                        NativeMethods.CloseClipboard();
+                    }
+                }
+            }
+            catch
+            {
+                // 清理失败不影响测试结论。
+            }
+        }
+    }
+
+    private static void PutClipboardTextWithFlags(string text, uint flagFormat, byte[]? flagValue)
+    {
+        if (!NativeMethods.OpenClipboard(IntPtr.Zero))
+        {
+            throw new InvalidOperationException("无法打开剪贴板");
+        }
+
+        try
+        {
+            NativeMethods.EmptyClipboard();
+            var handle = NativeMethods.AllocBytes(System.Text.Encoding.Unicode.GetBytes(text + "\0"));
+            if (NativeMethods.SetClipboardData(NativeMethods.CfUnicodeText, handle) == IntPtr.Zero)
+            {
+                NativeMethods.GlobalFree(handle);
+                throw new InvalidOperationException("写入测试文本失败");
+            }
+
+            if (flagFormat != 0 && flagValue != null)
+            {
+                var flag = NativeMethods.AllocBytes(flagValue);
+                if (NativeMethods.SetClipboardData(flagFormat, flag) == IntPtr.Zero)
+                {
+                    NativeMethods.GlobalFree(flag);
+                }
+            }
+        }
+        finally
+        {
+            NativeMethods.CloseClipboard();
+        }
     }
 
     private static void CheckDib(List<string> failures)

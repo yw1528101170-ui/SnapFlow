@@ -53,7 +53,7 @@ public sealed class AppHost
                 }
             });
         _storeRecoveryMessage = HistoryStore.LastRecoveryMessage;
-        Track(Task.Run(() => _store.Purge(_settings.RetentionDays)));
+        Track(Task.Run(() => PurgeAll(_settings.RetentionDays)));
         _history = new HistoryWindow(this);
         _overlay = new OverlayWindow();
         _toast = new ToastWindow();
@@ -316,6 +316,12 @@ public sealed class AppHost
     {
         if (task.IsCompleted)
         {
+            if (task.IsFaulted)
+            {
+                // 已完成即故障的任务不会走到下面的 ContinueWith，不补记就完全无人观察。
+                Log.Info("后台任务失败：" + task.Exception?.GetBaseException().Message);
+            }
+
             return;
         }
 
@@ -379,11 +385,24 @@ public sealed class AppHost
         _toast.Show(_settings.RunAtStartup ? "已开启开机自启动" : "已关闭开机自启动");
     }
 
+    /// <summary>保存目录生效值：未自定义时落在「图片\SnapFlow」。</summary>
+    private string EffectiveSaveFolder()
+        => string.IsNullOrWhiteSpace(_settings.SaveFolder) ? ScreenshotFiles.DefaultFolder : _settings.SaveFolder;
+
+    /// <summary>
+    /// 历史库与「保存到文件夹」的截图共用同一套保留期：历史图片随库清理，
+    /// 保存目录里的 SnapFlow-*.png 副本若不跟着清理，会无限累积、敏感截图长期留存。
+    /// </summary>
+    private int PurgeAll(int retentionDays)
+    {
+        var removed = _store.Purge(retentionDays);
+        removed += ScreenshotFiles.PurgeSaved(EffectiveSaveFolder(), retentionDays);
+        return removed;
+    }
+
     private void OpenScreenshotFolder()
     {
-        var folder = string.IsNullOrWhiteSpace(_settings.SaveFolder)
-            ? ScreenshotFiles.DefaultFolder
-            : _settings.SaveFolder;
+        var folder = EffectiveSaveFolder();
         try
         {
             Directory.CreateDirectory(folder);
@@ -495,7 +514,7 @@ public sealed class AppHost
         if (retentionChanged)
         {
             // 只有保留天数真的变了才清理，避免「改个开关就触发全库 Purge」。
-            Track(Task.Run(() => _store.Purge(next.RetentionDays)));
+            Track(Task.Run(() => PurgeAll(next.RetentionDays)));
         }
         _history.SetPaused(next.Paused);
         _tray.UpdateTip(next.Paused);
@@ -1183,6 +1202,10 @@ public sealed class AppHost
 
     private async Task RecognizeAsync(string id, byte[] png, bool force = false)
     {
+        // 退出排空契约：Shutdown 会在 UI 线程上同步等待本任务（Task.WaitAll），
+        // 如果 await 的续体还要排队回 UI 线程，就变成「等的人被等」，等待必然超时、
+        // SQLite 连接先被释放、迟到的续体撞上已释放的连接。本方法后续只碰线程安全的
+        // HistoryStore/_queue，续体留在线程池即可。
         try
         {
             if (!force)
@@ -1194,7 +1217,7 @@ public sealed class AppHost
                 }
             }
 
-            await _ocrGate.WaitAsync(_lifetime.Token);
+            await _ocrGate.WaitAsync(_lifetime.Token).ConfigureAwait(false);
             try
             {
                 if (!force)
@@ -1206,7 +1229,7 @@ public sealed class AppHost
                     }
                 }
 
-                var text = await OcrService.ReadAsync(png);
+                var text = await OcrService.ReadAsync(png).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(text) && !_lifetime.IsCancellationRequested)
                 {
                     _store.SetRecognizedText(id, text, force);
@@ -1235,7 +1258,7 @@ public sealed class AppHost
     {
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(6), token);
+            await Task.Delay(TimeSpan.FromSeconds(6), token).ConfigureAwait(false);
             var pending = _store.GetLegacyOcrImages(24);
             Log.Info($"重识别候选图片：{pending.Count}");
             foreach (var (id, path) in pending)
@@ -1252,9 +1275,9 @@ public sealed class AppHost
                         continue;
                     }
 
-                    var png = await File.ReadAllBytesAsync(path, token);
-                    await RecognizeAsync(id, png, force: true);
-                    await Task.Delay(200, token);
+                    var png = await File.ReadAllBytesAsync(path, token).ConfigureAwait(false);
+                    await RecognizeAsync(id, png, force: true).ConfigureAwait(false);
+                    await Task.Delay(200, token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -1280,12 +1303,14 @@ public sealed class AppHost
         using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
         try
         {
-            while (await timer.WaitForNextTickAsync(token))
+            // WaitForNextTickAsync 的取消续体同样不能回 UI 线程：Shutdown 在 UI 线程上
+            // Wait(1500) 本任务，续体被阻塞就永远等不到自然结束（详见 RecognizeAsync 注释）。
+            while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
             {
                 int removed;
                 try
                 {
-                    removed = _store.Purge(_retentionDays);
+                    removed = PurgeAll(_retentionDays);
                 }
                 catch (Exception ex)
                 {

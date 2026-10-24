@@ -9,7 +9,8 @@ internal sealed class TranslateCaptureHandler : ICaptureActionHandler
     public async Task ExecuteAsync(PostCaptureContext context)
     {
         var shot = context.Shot;
-        context.Toast.ShowSticky("正在识别并翻译...");
+        // 明确告知文字的去向：截图 OCR 结果会发送到 Google 翻译服务。
+        context.Toast.ShowSticky("正在识别并翻译（文字将发送到 Google 翻译）...");
         string? text = null;
         try
         {
@@ -51,6 +52,8 @@ internal sealed class TranslateCaptureHandler : ICaptureActionHandler
         }
         else
         {
+            // 翻译失败：不再把原文拼进浏览器 URL 打开网页版——OCR 出的内容（可能含密码/
+            // 内网信息）会因此进入浏览器历史与网络请求日志。改为复制原文交给用户自行处理。
             try
             {
                 var added = context.Store.TryAdd(ClipKind.Text, text, null, Hashing.OfText(text), ClipSource.Clipboard);
@@ -60,8 +63,7 @@ internal sealed class TranslateCaptureHandler : ICaptureActionHandler
                     context.NotifyHistoryInserted(added);
                 }
 
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo($"https://translate.google.com/?sl=auto&tl=zh-CN&text={Uri.EscapeDataString(text)}") { UseShellExecute = true });
-                context.Toast.Show("已提取文字并打开在线翻译");
+                context.Toast.Show("翻译服务不可用，已复制识别出的原文");
             }
             catch
             {

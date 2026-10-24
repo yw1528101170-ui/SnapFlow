@@ -23,11 +23,18 @@ internal static class AiVisionService
             : endpoint + "/chat/completions";
 
         // 非法地址（缺协议头、乱写域名等）此前会在 try 块外抛 UriFormatException，报错文案笼统；
-        // 这里前置校验并按本方法的约定返回明确文案。
+        // 这里前置校验并按本方法的约定返回明确文案（「【提示】」前缀让窗口归类为“需要配置”）。
         if (!Uri.TryCreate(url, UriKind.Absolute, out var requestUri)
             || (requestUri.Scheme != Uri.UriSchemeHttp && requestUri.Scheme != Uri.UriSchemeHttps))
         {
-            return "AI 接口地址无效：" + settings.AiApiUrl + "\n请在“设置”中填写以 http:// 或 https:// 开头的完整接口地址。";
+            return "【提示】AI 接口地址无效：" + settings.AiApiUrl + "\n请在“设置”中填写以 http:// 或 https:// 开头的完整接口地址。";
+        }
+
+        // http 明文端点会把 API Key 与整张截图一起明文出网（代理/网关日志可见），
+        // 默认拒绝；仅放行本机回环，兼容 Ollama 等本地推理服务。
+        if (requestUri.Scheme == Uri.UriSchemeHttp && !IsLoopbackHost(requestUri.Host))
+        {
+            return "【提示】AI 接口地址使用了 http:// 明文端点，API Key 与截图会以明文传输。\n请在“设置”中改用 https:// 地址；本地推理服务（Ollama 等）可使用 http://127.0.0.1 或 http://localhost。";
         }
 
         using var stream = new MemoryStream();
@@ -95,4 +102,11 @@ internal static class AiVisionService
             return "网络或接口请求异常: " + ex.Message;
         }
     }
+
+    /// <summary>http 端点仅放行本机回环（Ollama 等本地推理服务），其余一律要求 https。</summary>
+    internal static bool IsLoopbackHost(string host)
+        => host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+           || host.Equals("::1", StringComparison.Ordinal)
+           || host.Equals("[::1]", StringComparison.Ordinal)
+           || host.StartsWith("127.", StringComparison.Ordinal);
 }

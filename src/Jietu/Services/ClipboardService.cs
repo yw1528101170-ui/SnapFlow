@@ -18,6 +18,13 @@ internal sealed class ClipboardService
     private readonly IntPtr _owner;
     private readonly object _clip = new();
     private readonly SemaphoreSlim _signal = new(0, int.MaxValue);
+
+    // 「请勿收录」标记（密码管理器等工具写入剪贴板时附带的隐私契约）。此前只按前台进程
+    // 名单过滤：名单外的管理器、以及复制后立刻切换窗口的时序绕过，都会把一次性密码明文
+    // 写进历史库并被全文索引。标记附着在剪贴板数据本身上，不随窗口切换失效。
+    private static uint _excludeMonitorFormat;
+    private static uint _includeHistoryFormat;
+    private static uint _viewerIgnoreFormat;
     private uint _pngFormat;
     private uint _htmlFormat;
     private uint _rtfFormat;
@@ -356,6 +363,13 @@ internal sealed class ClipboardService
                     return true;
                 }
 
+                if (HasExclusionMarker())
+                {
+                    // 来源程序（密码管理器等）声明这条内容不要被剪贴板工具收录：
+                    // 跳过且不入库。序号已在上面记录，同一条内容不会被反复重试。
+                    return true;
+                }
+
                 files = ReadFiles();
                 if (files.Count == 0)
                 {
@@ -511,6 +525,68 @@ internal sealed class ClipboardService
         }
 
         return NativeMethods.CopyGlobalBytes(handle);
+    }
+
+    private static void EnsureExclusionFormats()
+    {
+        if (_excludeMonitorFormat == 0)
+        {
+            _excludeMonitorFormat = NativeMethods.RegisterClipboardFormat("ExcludeClipboardContentFromMonitorProcessing");
+        }
+
+        if (_includeHistoryFormat == 0)
+        {
+            _includeHistoryFormat = NativeMethods.RegisterClipboardFormat("CanIncludeInClipboardHistory");
+        }
+
+        if (_viewerIgnoreFormat == 0)
+        {
+            _viewerIgnoreFormat = NativeMethods.RegisterClipboardFormat("CF_CLIPBOARD_VIEWER_IGNORE");
+        }
+    }
+
+    /// <summary>必须在 OpenClipboard 成功后调用：命中任一「请勿收录」标记返回 true。</summary>
+    private static bool HasExclusionMarker()
+    {
+        EnsureExclusionFormats();
+        if ((_excludeMonitorFormat != 0 && NativeMethods.IsClipboardFormatAvailable(_excludeMonitorFormat))
+            || (_viewerIgnoreFormat != 0 && NativeMethods.IsClipboardFormatAvailable(_viewerIgnoreFormat)))
+        {
+            return true;
+        }
+
+        if (_includeHistoryFormat == 0 || !NativeMethods.IsClipboardFormatAvailable(_includeHistoryFormat))
+        {
+            return false;
+        }
+
+        // CanIncludeInClipboardHistory 是带值的 DWORD：0 = 不要进剪贴板历史。
+        // 格式存在但读不出值时按排除处理——宁可少记一条，不可错记一条密码。
+        var value = CopyLimited(_includeHistoryFormat, 4);
+        return value == null || value.Length < 4 || BitConverter.ToUInt32(value, 0) == 0;
+    }
+
+    /// <summary>自检用：独立打开剪贴板检查排除标记，不依赖 Listen 生命周期。</summary>
+    internal static bool ClipboardMarkedExcluded()
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            if (NativeMethods.OpenClipboard(IntPtr.Zero))
+            {
+                try
+                {
+                    return HasExclusionMarker();
+                }
+                finally
+                {
+                    NativeMethods.CloseClipboard();
+                }
+            }
+
+            Thread.Sleep(15);
+        }
+
+        return false;
     }
 
     private static List<string> ReadFiles()

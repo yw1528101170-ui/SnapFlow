@@ -18,9 +18,13 @@ internal static class TranslateService
         {
             var hasChinese = text.Any(c => c >= 0x4E00 && c <= 0x9FFF);
             var targetLang = hasChinese ? "en" : "zh-CN";
-            var url = $"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={targetLang}&dt=t&q={Uri.EscapeDataString(text)}";
-            var response = await Http.GetStringAsync(url);
-            using var doc = JsonDocument.Parse(response);
+            // 文本放 POST 请求体而不是 URL 查询串：GET 的 q= 参数会进入代理/网关的访问日志，
+            // 把屏幕上 OCR 出的敏感内容泄露给网络中间层。gtx 端点对两种方式等价接受。
+            var url = $"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={targetLang}&dt=t";
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["q"] = text });
+            var response = await Http.PostAsync(url, content);
+            var body = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
             if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
             {
                 var sentences = doc.RootElement[0];
