@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 .NET SDK（按 global.json）
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: 重建离线依赖缓存（SHA-256 全量校验）
+        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-nupkgs.ps1
+
+      - name: 构建（Release）
+        run: dotnet build src/Jietu/Jietu.csproj -c Release --nologo
+
+      - name: 单元测试
+        run: dotnet test tests/Jietu.Tests/Jietu.Tests.csproj -c Release --nologo
+
+      - name: 程序自检（--self-test）
+        run: src/Jietu/bin/x64/Release/net10.0-windows10.0.19041.0/win-x64/SnapFlow.exe --self-test

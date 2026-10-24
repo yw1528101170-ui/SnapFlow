@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>Jietu.Tests</RootNamespace>
+    <AssemblyName>Jietu.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- 与主程序对齐：固定 x64 / win-x64，避免与被测项目的 RID 图谱不一致 -->
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Platform Condition="'$(Platform)' == 'AnyCPU' Or '$(Platform)' == ''">x64</Platform>
+    <!-- 必须与主程序钉同一个 Windows SDK 投影包，否则引用主程序输出时报 NETSDK1148 -->
+    <WindowsSdkPackageVersion>10.0.26100.57</WindowsSdkPackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Jietu\Jietu.csproj" />
+  </ItemGroup>
+</Project>

@@ -172,6 +172,11 @@ internal static class SelfTest
             PutClipboardTextWithFlags("selftest-secret2", historyFormat, BitConverter.GetBytes(0u));
             Expect(ClipboardService.ClipboardMarkedExcluded(), "历史标记 0 排除", failures);
         }
+        catch (InvalidOperationException ex) when (ex.Message == "无法打开剪贴板")
+        {
+            // 没有桌面剪贴板的会话（CI 的服务会话等）跳过本项不算失败；本机打包时始终会执行。
+            try { Console.WriteLine("skip: 当前会话没有剪贴板，跳过排除标记检查"); } catch { }
+        }
         catch (Exception ex)
         {
             failures.Add("剪贴板排除: " + ex.Message);
