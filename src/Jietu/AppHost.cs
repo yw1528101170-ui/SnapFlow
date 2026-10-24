@@ -24,10 +24,8 @@ public sealed class AppHost
     private readonly ConcurrentDictionary<Task, byte> _background = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly ClipIngestService _ingest;
-    private CancellationTokenSource? _captureCts;
+    private readonly CaptureOrchestrator _capture;
     private readonly List<PinWindow> _pins = [];
-    private int _captureGeneration;
-    private bool _counting;
     private int _retentionDays;
     private long _lastTrayClick;
     private bool _shuttingDown;
@@ -118,6 +116,28 @@ public sealed class AppHost
         {
             _queue.TryEnqueue(() => _osd.UpdateMetrics(metrics));
         };
+        _capture = new CaptureOrchestrator(
+            _queue,
+            _overlay,
+            _toast,
+            _osd,
+            _pipeline,
+            _store,
+            _ingest,
+            _clipboard,
+            () => _settings,
+            () => _history.AppWindow.IsVisible || _settingsWindow?.AppWindow.IsVisible == true || _toast.AppWindow.IsVisible,
+            () =>
+            {
+                _history.Dismiss();
+                _settingsWindow?.Dismiss();
+            },
+            record => _history.NotifyInserted(record),
+            RememberImage,
+            PinFile,
+            PinText,
+            OpenAiVision,
+            _lifetime.Token);
         _overlay.CopyTextRequested += text =>
         {
             try
@@ -204,12 +224,7 @@ public sealed class AppHost
 
         // 任何一步清理失败都不能阻断后面的步骤：必须保证进程最终能退出，
         // 否则会留下「无托盘、无热键、却占着 exe/history.db」的僵尸进程。
-        Safe(() =>
-        {
-            _captureCts?.Cancel();
-            _captureCts?.Dispose();
-            _captureCts = null;
-        });
+        Safe(_capture.CancelActive);
         Safe(() => _lifetime.Cancel());
         try
         {
@@ -651,7 +666,7 @@ public sealed class AppHost
         switch (id)
         {
             case 1:
-                Track(CaptureAsync(foreground, 0));
+                Track(_capture.CaptureAsync(foreground, 0));
                 break;
             case 2:
                 if (_history.IsOpen)
@@ -724,22 +739,22 @@ public sealed class AppHost
             switch (_tray.ShowMenu(ctx))
             {
                 case TrayCommand.CaptureNow:
-                    Track(CaptureAsync(foreground, 0));
+                    Track(_capture.CaptureAsync(foreground, 0));
                     break;
                 case TrayCommand.CaptureDelay1:
-                    Track(CaptureAsync(foreground, 1));
+                    Track(_capture.CaptureAsync(foreground, 1));
                     break;
                 case TrayCommand.CaptureDelay2:
-                    Track(CaptureAsync(foreground, 2));
+                    Track(_capture.CaptureAsync(foreground, 2));
                     break;
                 case TrayCommand.CaptureDelay3:
-                    Track(CaptureAsync(foreground, 3));
+                    Track(_capture.CaptureAsync(foreground, 3));
                     break;
                 case TrayCommand.CaptureDelay5:
-                    Track(CaptureAsync(foreground, 5));
+                    Track(_capture.CaptureAsync(foreground, 5));
                     break;
                 case TrayCommand.CaptureDelay10:
-                    Track(CaptureAsync(foreground, 10));
+                    Track(_capture.CaptureAsync(foreground, 10));
                     break;
                 case TrayCommand.ShowHistory:
                     _history.Present(foreground);
@@ -926,190 +941,6 @@ public sealed class AppHost
         if (restored > 0)
         {
             _toast.Show($"已恢复 {restored} 个贴图的鼠标交互");
-        }
-    }
-
-    private async Task CaptureAsync(PasteTarget pasteBack, int delaySeconds)
-    {
-        if (_counting && delaySeconds == 0)
-        {
-            _captureGeneration++;
-            _captureCts?.Cancel();
-            _counting = false;
-            _toast.Show("已取消截图");
-            return;
-        }
-
-        var generation = ++_captureGeneration;
-        _captureCts?.Cancel();
-        _captureCts?.Dispose();
-        var captureCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-        _captureCts = captureCts;
-        if (delaySeconds > 0)
-        {
-            _counting = true;
-            try
-            {
-                for (var left = delaySeconds; left > 0; left--)
-                {
-                    if (generation != _captureGeneration)
-                    {
-                        return;
-                    }
-
-                    _toast.ShowSticky(left + " 秒后截图，再按一次截图热键会取消");
-                    await Task.Delay(1000);
-                }
-            }
-            finally
-            {
-                if (generation == _captureGeneration)
-                {
-                    _counting = false;
-                }
-            }
-
-            if (generation != _captureGeneration)
-            {
-                return;
-            }
-        }
-
-        Log.Info("开始截图");
-        var osdHide = _settings.OsdHideOnCapture && _osd.IsVisible;
-        if (osdHide)
-        {
-            // 先让胶囊缩回屏幕边缘（看得见的「主动让开」），再抓屏
-            await _osd.RetractAsync();
-            if (generation != _captureGeneration)
-            {
-                // 退场途中这次截图已被取消：立刻把胶囊放回视野，别让它一直消失
-                _osd.OnCaptureEnded();
-                return;
-            }
-        }
-        var settle = _history.AppWindow.IsVisible || _settingsWindow?.AppWindow.IsVisible == true || _toast.AppWindow.IsVisible || osdHide;
-        _overlay.CancelPick();
-        _history.Dismiss();
-        _settingsWindow?.Dismiss();
-        // Toast 的隐藏是 300~500ms 的退场动画；必须等它真正隐藏，否则会被合成进截图。
-        // ToastWindow 同时设置了 WDA_EXCLUDEFROMCAPTURE 作为双保险。
-        await _toast.HideAsync();
-        if (settle)
-        {
-            await Task.Delay(32);
-            await Task.Run(NativeMethods.DwmFlush);
-        }
-        if (generation != _captureGeneration)
-        {
-            if (osdHide)
-            {
-                _osd.OnCaptureEnded();
-            }
-
-            return;
-        }
-
-        var windowTask = Task.Run(WindowPicker.Refresh);
-        var monitor = ScreenUtil.ShotMonitor(_settings.MultiMonitorCaptureMode);
-        CapturedFrame? frame = null;
-        try
-        {
-            frame = await CaptureService.CaptureDesktopAsync(monitor);
-            if (generation != _captureGeneration)
-            {
-                return;
-            }
-
-            if (frame == null)
-            {
-                _toast.Show("截图失败：画面可能处于锁屏、UAC 或受保护内容");
-                return;
-            }
-
-            try
-            {
-                await windowTask;
-            }
-            catch (Exception ex)
-            {
-                Log.Info("预先刷新窗口树失败：" + ex.Message);
-            }
-
-            var captured = frame.Value;
-            frame = null;
-            var image = await _overlay.PickAsync(captured.Bitmap, captured.Pixels, monitor);
-            if (generation != _captureGeneration || image == null)
-            {
-                return;
-            }
-
-                        if (image.LongCapture)
-            {
-                _toast.ShowSticky("正在自动滚动拼接长截图...");
-                var grown = await Task.Run(() => LongShot.Capture(
-                    image.ScreenX,
-                    image.ScreenY,
-                    image.Width,
-                    image.Height,
-                    (curStep, curHeight) =>
-                    {
-                        _queue.TryEnqueue(() => _toast.ShowSticky($"正在拼接长截图... 已捕获第 {curStep} 屏 ({curHeight}px)"));
-                    },
-                    captureCts.Token));
-
-                if (generation != _captureGeneration)
-                {
-                    return;
-                }
-
-                if (grown is { } shot && shot.Height > image.Height)
-                {
-                    image = new PickedShot
-                    {
-                        Width = shot.Width,
-                        Height = shot.Height,
-                        Pixels = shot.Pixels,
-                        Pin = image.Pin,
-                    };
-                    _toast.Show($"长截图拼接成功！(高度 {shot.Height}px)");
-                }
-                else
-                {
-                    _toast.Show("页面未发生滚动，按当前范围保存");
-                }
-            }
-
-            var postContext = new PostCaptureContext(
-                image,
-                pasteBack,
-                _settings,
-                _store,
-                _ingest,
-                _clipboard,
-                _toast,
-                path => PinFile(path),
-                text => PinText(text),
-                record => _history.NotifyInserted(record),
-                (id, bytes) => RememberImage(id, bytes),
-                (png, prompt) => OpenAiVision(png, prompt));
-            await _pipeline.ExecuteAsync(postContext);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex);
-            if (generation == _captureGeneration)
-            {
-                _toast.Show("截图失败");
-            }
-        }
-        finally
-        {
-            frame?.Bitmap.Dispose();
-            if (osdHide)
-            {
-                _osd.OnCaptureEnded();
-            }
         }
     }
 
