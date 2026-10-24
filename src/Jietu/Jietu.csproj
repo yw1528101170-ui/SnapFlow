@@ -46,6 +46,9 @@
     <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.5.1" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <!-- 显式覆盖 Microsoft.Data.Sqlite 传递依赖的 SQLitePCLRaw 2.1.11：
+         该版本有已知高危安全公告 GHSA-2m69-gcr7-jv3q，2.1.14 为修复版 -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.14" />
     <PackageReference Include="ZXing.Net" Version="0.16.10" />
   </ItemGroup>
 </Project>

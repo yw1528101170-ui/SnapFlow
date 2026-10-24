@@ -4,6 +4,24 @@
   <b>轻量、现代且高效率的 Windows 智能截图、贴图、屏幕监控与剪贴板工作流增强工具</b>
 </p>
 
+<p align="center">
+  <a href="https://github.com/yw1528101170-ui/SnapFlow/actions/workflows/ci.yml"><img src="https://github.com/yw1528101170-ui/SnapFlow/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://github.com/yw1528101170-ui/SnapFlow/releases/latest"><img src="https://img.shields.io/badge/release-v1.1.4-blue" alt="release"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="license"/></a>
+</p>
+
+---
+
+## 📥 下载
+
+前往 **[Releases 发布页](https://github.com/yw1528101170-ui/SnapFlow/releases/latest)** 下载最新版本：
+
+| 文件 | 适合 |
+| :--- | :--- |
+| `SnapFlow-Setup-v<x.y.z>.exe` | 推荐安装版：向导式安装、开机自启、可一键卸载 |
+| `SnapFlow-v<x.y.z>-win-x64-Portable.zip` | 绿色免安装版：解压即用 |
+| `SHA256SUMS.txt` | 完整性校验清单（下载后可用 `Get-FileHash` / `sha256sum` 比对） |
+
 ---
 
 ## 🌟 核心特性
@@ -38,7 +56,7 @@
 
 ---
 
-## 📦 下载与安装
+## 🛠️ 本地构建发布包
 
 运行 `.\installer\build.ps1` 生成到 `dist/` 目录（文件名带具体版本号，以目录内实际版本为准）：
 

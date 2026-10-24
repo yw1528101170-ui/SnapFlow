@@ -38,6 +38,15 @@ $PackageChecksums = @{
     "Microsoft.WindowsAppSDK.InteractiveExperiences|2.1.9" = "f9159d73e3e46717f159606e43b4acf8336aaff5bdd4d395fe3a93fdb41437ac"
     "NETStandard.Library|2.0.0"                        = "3e9edf47295a8bc26b1353bef5319f20426b00e9a75932512d613ea8905a84ad"
     "Microsoft.NETCore.Platforms|1.1.0"                = "15e338d24b5c39b4099389cc612841eb51ff13c07bb4829f97d39b27420e7023"
+    # SQLitePCLRaw 2.1.14（修复 GHSA-2m69-gcr7-jv3q；2.1.11 旧链保留给历史参考/回退）
+    "SQLitePCLRaw.bundle_e_sqlite3|2.1.14"             = "68b2e8062a383bdce8a0bccac87d19493d2797fd5f8d2745b464644bbc076a3b"
+    "SQLitePCLRaw.core|2.1.14"                         = "699d899a12951f8a790cff8cfd03bc4bb4ca5b8b069f8fa3ca1e8d6a5c19360b"
+    "SQLitePCLRaw.lib.e_sqlite3|2.1.14"                = "b7e9e18df72c812df2c4769b6ab685de0447f8080f39c5a28ab11145d79a36f0"
+    "SQLitePCLRaw.lib.e_sqlite3.android|2.1.14"       = "ca0abf7f28d6559c8cf7b767a70ef6ec2109cb9bdd93dfe6266c65d893788fdf"
+    "SQLitePCLRaw.lib.e_sqlite3.ios|2.1.14"            = "99cf43657e9d2e20531647f079f0d8495a487cbca8913a2a572b383b749b439a"
+    "SQLitePCLRaw.lib.e_sqlite3.tvos|2.1.14"           = "ea47018a67f4dfcdbd1088e704ca84a38a3e17b5b50db0a0ed7aef2c79e9674f"
+    "SQLitePCLRaw.provider.e_sqlite3|2.1.14"           = "d870df546696a372330d592e462fa48d81dccd21ba38277495112905f2147869"
+    "SQLitePCLRaw.provider.internal|2.1.14"            = "af3d12af701547c55d79a1975d6f14f8fbb596d67d3b68c4e74e2482aec6a1da"
     # ── 传递依赖（由脚本从官方源下载后计算固化）──────────────────────
     "Microsoft.CodeCoverage|17.14.1"                   = "7fc432b46f06bd1a0fe3baced8a1269c32f1229c9eb1aab6e931630dd5b8d06b"
     "Microsoft.Data.Sqlite.Core|10.0.0"                = "d388d883d11bad073e2c7eb02a1dc048208d6aeeb06791aad2d0d877ca081c0b"
@@ -243,7 +252,8 @@ $seeds = @(
     "Microsoft.NET.Test.Sdk|17.14.1",
     "xunit|2.9.3",
     "xunit.runner.visualstudio|3.1.5",
-    "ZXing.Net|0.16.10"
+    "ZXing.Net|0.16.10",
+    "SQLitePCLRaw.bundle_e_sqlite3|2.1.14"
 )
 $queue = New-Object System.Collections.Generic.Queue[string]
 foreach ($seed in $seeds) { $queue.Enqueue($seed) }
