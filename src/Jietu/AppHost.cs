@@ -25,7 +25,7 @@ public sealed class AppHost
     private readonly CancellationTokenSource _lifetime = new();
     private readonly ClipIngestService _ingest;
     private readonly CaptureOrchestrator _capture;
-    private readonly List<PinWindow> _pins = [];
+    private readonly PinManager _pins;
     private int _retentionDays;
     private long _lastTrayClick;
     private bool _shuttingDown;
@@ -40,22 +40,8 @@ public sealed class AppHost
         ScreenshotFiles.CleanupTemp();
         _settings = SettingsService.Load(AppPaths.SettingsFile);
         _settingsLoadError = SettingsService.LastLoadError;
-        _store = new HistoryStore(
-            AppPaths.Database,
-            AppPaths.Images,
-            path =>
-            {
-                lock (_pins)
-                {
-                    return _pins.Any(pin => pin.UsesFile(path));
-                }
-            });
-        _storeRecoveryMessage = HistoryStore.LastRecoveryMessage;
-        _ingest = new ClipIngestService(_store);
-        // 识别在后台线程完成，经 UI 队列推给历史窗口原地刷新
-        _ingest.Recognized += (id, text) => _queue.TryEnqueue(() => _history.NotifyRecognized(id, text));
-        Track(Task.Run(() => PurgeAll(_settings.RetentionDays)));
-        _history = new HistoryWindow(this);
+        // 基础窗口与剪贴板先建：PinManager 依赖它们，而 HistoryStore 的文件占用回调
+        // 又依赖 PinManager——必须保证首个后台清理任务启动时三者都已就位。
         _overlay = new OverlayWindow();
         _toast = new ToastWindow();
         _pipeline = new PostCapturePipeline([
@@ -81,6 +67,17 @@ public sealed class AppHost
                 _queue.TryEnqueue(() => OnTray(message, target));
             });
         _clipboard = new ClipboardService(_message.Handle) { Paused = _settings.Paused };
+        _pins = new PinManager(_clipboard, _toast, Track, OpenAiVision);
+        _store = new HistoryStore(
+            AppPaths.Database,
+            AppPaths.Images,
+            path => _pins.UsesFile(path));
+        _storeRecoveryMessage = HistoryStore.LastRecoveryMessage;
+        _ingest = new ClipIngestService(_store);
+        // 识别在后台线程完成，经 UI 队列推给历史窗口原地刷新
+        _ingest.Recognized += (id, text) => _queue.TryEnqueue(() => _history.NotifyRecognized(id, text));
+        Track(Task.Run(() => PurgeAll(_settings.RetentionDays)));
+        _history = new HistoryWindow(this);
         _clipboard.Captured += clip => Track(StoreClipAsync(clip));
         _tray = new TrayIcon(_message.Handle, _settings.Paused);
         // Explorer 崩溃/重启后托盘图标会被系统清空，必须收到 TaskbarCreated 广播后重新添加，
@@ -241,18 +238,7 @@ public sealed class AppHost
         Safe(_message.Destroy);
         Safe(SingleInstance.Stop);
 
-        PinWindow[] pins;
-        lock (_pins)
-        {
-            pins = _pins.ToArray();
-            _pins.Clear();
-        }
-
-        foreach (var pin in pins)
-        {
-            Safe(pin.Close);
-        }
-
+        Safe(_pins.CloseAllOnShutdown);
         Safe(_history.AllowClose);
         Safe(() => _settingsWindow?.AllowClose());
         Safe(() =>
@@ -366,34 +352,7 @@ public sealed class AppHost
         }
     }
 
-    public void CloseAllPins()
-    {
-        PinWindow[] pins;
-        lock (_pins)
-        {
-            if (_pins.Count == 0)
-            {
-                return;
-            }
-
-            pins = _pins.ToArray();
-            _pins.Clear();
-        }
-
-        foreach (var pin in pins)
-        {
-            try
-            {
-                pin.Close();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex);
-            }
-        }
-
-        _toast.Show($"已关闭 {pins.Length} 个桌面贴图");
-    }
+    public void CloseAllPins() => _pins.CloseAll();
 
     private void ToggleStartup()
     {
@@ -692,15 +651,9 @@ public sealed class AppHost
             }
 
             _lastTrayClick = now;
-            bool anyGhost;
-            lock (_pins)
+            if (_pins.AnyGhost)
             {
-                anyGhost = _pins.Any(p => p.IsGhost);
-            }
-
-            if (anyGhost)
-            {
-                RestoreGhostPins();
+                _pins.RestoreGhosts();
                 return;
             }
             if (_history.IsOpen)
@@ -717,13 +670,8 @@ public sealed class AppHost
 
         if (message is NativeMethods.WmRButtonUp or NativeMethods.WmContextMenu)
         {
-            int pinCount;
-            bool anyGhostPins;
-            lock (_pins)
-            {
-                pinCount = _pins.Count;
-                anyGhostPins = _pins.Any(p => p.IsGhost);
-            }
+            var pinCount = _pins.Count;
+            var anyGhostPins = _pins.AnyGhost;
 
             var ctx = new TrayMenuContext(
                 _settings.Paused,
@@ -766,10 +714,10 @@ public sealed class AppHost
                     OpenScreenshotFolder();
                     break;
                 case TrayCommand.ClosePins:
-                    CloseAllPins();
+                    _pins.CloseAll();
                     break;
                 case TrayCommand.RestoreGhostPins:
-                    RestoreGhostPins();
+                    _pins.RestoreGhosts();
                     break;
                 case TrayCommand.ToggleOsd:
                     ToggleOsd();
@@ -832,72 +780,9 @@ public sealed class AppHost
         }
     }
 
-    /// <summary>
-    /// 贴图窗口（文字/图片两种形态）共用的生命周期接线：关闭即注销、复制走后台、
-    /// AI 识图开主窗口。此前这段接线在 PinFile/PinText 里逐行重复，改一处漏一处。
-    /// </summary>
-    private PinWindow CreatePinnedWindow()
-    {
-        var window = new PinWindow();
-        window.Dismissed += pin =>
-        {
-            lock (_pins)
-            {
-                _pins.Remove(pin);
-            }
-        };
-        window.CopyRequested += pinned => Track(CopyPinnedAsync(pinned));
-        window.AiVisionRequested += bytes => OpenAiVision(bytes, null);
-        window.CopyTextRequested += copied =>
-        {
-            _clipboard.SetText(copied);
-            _toast.Show("已复制便签文字");
-        };
-        return window;
-    }
+    public void PinFile(string? path) => _pins.PinFile(path);
 
-    public void PinFile(string? path)
-    {
-        if (string.IsNullOrEmpty(path) || !File.Exists(path))
-        {
-            _toast.Show("这张图片已经找不到了");
-            return;
-        }
-
-        var window = CreatePinnedWindow();
-        try
-        {
-            window.ShowFile(path);
-        }
-        catch (Exception ex)
-        {
-            // 先加载成功再登记：避免加载失败时窗口永久留在 _pins 里，把文件“锁”在历史清理保护中。
-            Log.Error(ex);
-            window.Close();
-            _toast.Show("这张图片无法加载，可能已被删除或占用");
-            return;
-        }
-
-        lock (_pins)
-        {
-            _pins.Add(window);
-        }
-    }
-
-    public void PinText(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return;
-        }
-
-        var window = CreatePinnedWindow();
-        window.ShowText(text);
-        lock (_pins)
-        {
-            _pins.Add(window);
-        }
-    }
+    public void PinText(string? text) => _pins.PinText(text);
 
     public void OpenAiVision(byte[] png, string? prompt = null)
     {
@@ -920,45 +805,7 @@ public sealed class AppHost
         return _settingsWindow ??= new SettingsWindow(this);
     }
 
-    public void RestoreGhostPins()
-    {
-        PinWindow[] snapshot;
-        lock (_pins)
-        {
-            snapshot = _pins.ToArray();
-        }
-
-        var restored = 0;
-        foreach (var pin in snapshot)
-        {
-            if (pin.IsGhost)
-            {
-                pin.SetGhost(false);
-                restored++;
-            }
-        }
-
-        if (restored > 0)
-        {
-            _toast.Show($"已恢复 {restored} 个贴图的鼠标交互");
-        }
-    }
-
-    private async Task CopyPinnedAsync(string path)
-    {
-        try
-        {
-            var png = await File.ReadAllBytesAsync(path);
-            using var bitmap = await ImageBytes.FromPngAsync(png);
-            _clipboard.SetImage(png, ImageBytes.ReadBgra(bitmap), bitmap.PixelWidth, bitmap.PixelHeight);
-            _toast.Show("已复制");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex);
-            _toast.Show("复制失败");
-        }
-    }
+    public void RestoreGhostPins() => _pins.RestoreGhosts();
 
     private string? RegisterCurrent()
     {
