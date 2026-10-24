@@ -26,7 +26,7 @@ public sealed class AppHost
     private readonly ClipIngestService _ingest;
     private readonly CaptureOrchestrator _capture;
     private readonly PinManager _pins;
-    private long _lastTrayClick;
+    private readonly TrayController _trayController;
     private bool _shuttingDown;
     private Task? _purgeLoop;
     private readonly PostCapturePipeline _pipeline;
@@ -66,7 +66,7 @@ public sealed class AppHost
             {
                 var target = PasteTarget.Capture();
                 NativeMethods.AllowSetForegroundWindow(Environment.ProcessId);
-                _queue.TryEnqueue(() => OnTray(message, target));
+                _queue.TryEnqueue(() => _trayController.Handle(message, target));
             });
         _clipboard = new ClipboardService(_message.Handle) { Paused = settings.Paused };
         _pins = new PinManager(_clipboard, _toast, Track, OpenAiVision);
@@ -161,6 +161,23 @@ public sealed class AppHost
             _toast,
             Track);
         Track(Task.Run(() => _settingsApplier.PurgeAll(settings.RetentionDays)));
+        _trayController = new TrayController(
+            _history,
+            _pins,
+            _tray,
+            _capture,
+            _settingsApplier,
+            () => _settings,
+            Track,
+            EnsureSettingsWindow,
+            Restart,
+            Shutdown,
+            () =>
+            {
+                ClearHistory();
+            },
+            _toast,
+            _message.Handle);
     }
 
     public AppSettings Settings => _settings;
@@ -350,39 +367,6 @@ public sealed class AppHost
 
     public void CloseAllPins() => _pins.CloseAll();
 
-    private void OpenScreenshotFolder()
-    {
-        var folder = _settingsApplier.EffectiveSaveFolder();
-        try
-        {
-            Directory.CreateDirectory(folder);
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = folder,
-                UseShellExecute = true,
-            });
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex);
-            _toast.Show("无法打开文件夹：" + ex.Message);
-        }
-    }
-
-    private void PromptClearHistory()
-    {
-        var res = NativeMethods.MessageBox(
-            _message.Handle,
-            "确定要清空所有未固定的剪贴板历史记录吗？",
-            "SnapFlow - 清空历史记录",
-            NativeMethods.MbYesNo | NativeMethods.MbIconQuestion | NativeMethods.MbDefButton2);
-        if (res == NativeMethods.IdYes)
-        {
-            ClearHistory();
-            _toast.Show("已清空剪贴板历史");
-        }
-    }
-
     public void Restart()
     {
         var exe = Environment.ProcessPath;
@@ -549,119 +533,6 @@ public sealed class AppHost
                     _history.Present(foreground);
                 }
                 break;
-        }
-    }
-
-    private void OnTray(uint message, PasteTarget foreground)
-    {
-        if (message is NativeMethods.WmLButtonUp or NativeMethods.WmLButtonDblClk or NativeMethods.NinSelect)
-        {
-            var now = Environment.TickCount64;
-            if (now - _lastTrayClick < 250)
-            {
-                return;
-            }
-
-            _lastTrayClick = now;
-            if (_pins.AnyGhost)
-            {
-                _pins.RestoreGhosts();
-                return;
-            }
-            if (_history.IsOpen)
-            {
-                _history.Dismiss();
-            }
-            else
-            {
-                _history.Present(foreground);
-            }
-
-            return;
-        }
-
-        if (message is NativeMethods.WmRButtonUp or NativeMethods.WmContextMenu)
-        {
-            var pinCount = _pins.Count;
-            var anyGhostPins = _pins.AnyGhost;
-
-            var ctx = new TrayMenuContext(
-                _settings.Paused,
-                _settings.RunAtStartup,
-                _settings.RegionHotkey,
-                _settings.HistoryHotkey,
-                pinCount,
-                anyGhostPins,
-                _settings.ShowOsd,
-                _settings.OsdPosition,
-                _settings.OsdDisplay);
-
-            switch (_tray.ShowMenu(ctx))
-            {
-                case TrayCommand.CaptureNow:
-                    Track(_capture.CaptureAsync(foreground, 0));
-                    break;
-                case TrayCommand.CaptureDelay1:
-                    Track(_capture.CaptureAsync(foreground, 1));
-                    break;
-                case TrayCommand.CaptureDelay2:
-                    Track(_capture.CaptureAsync(foreground, 2));
-                    break;
-                case TrayCommand.CaptureDelay3:
-                    Track(_capture.CaptureAsync(foreground, 3));
-                    break;
-                case TrayCommand.CaptureDelay5:
-                    Track(_capture.CaptureAsync(foreground, 5));
-                    break;
-                case TrayCommand.CaptureDelay10:
-                    Track(_capture.CaptureAsync(foreground, 10));
-                    break;
-                case TrayCommand.ShowHistory:
-                    _history.Present(foreground);
-                    break;
-                case TrayCommand.ClearHistory:
-                    PromptClearHistory();
-                    break;
-                case TrayCommand.OpenFolder:
-                    OpenScreenshotFolder();
-                    break;
-                case TrayCommand.ClosePins:
-                    _pins.CloseAll();
-                    break;
-                case TrayCommand.RestoreGhostPins:
-                    _pins.RestoreGhosts();
-                    break;
-                case TrayCommand.ToggleOsd:
-                    _settingsApplier.ToggleOsd();
-                    break;
-                case TrayCommand.OsdPositionTopRight:
-                    _settingsApplier.SetOsdPosition("TopRight");
-                    break;
-                case TrayCommand.OsdPositionTopLeft:
-                    _settingsApplier.SetOsdPosition("TopLeft");
-                    break;
-                case TrayCommand.OsdDisplayPrimary:
-                    _settingsApplier.SetOsdDisplay("Primary");
-                    break;
-                case TrayCommand.OsdDisplayFollowCursor:
-                    _settingsApplier.SetOsdDisplay("FollowCursor");
-                    break;
-                case TrayCommand.TogglePause:
-                    SetPaused(!_settings.Paused);
-                    break;
-                case TrayCommand.ToggleStartup:
-                    _settingsApplier.ToggleStartup();
-                    break;
-                case TrayCommand.ShowSettings:
-                    EnsureSettingsWindow().Show(null);
-                    break;
-                case TrayCommand.Restart:
-                    Restart();
-                    break;
-                case TrayCommand.Exit:
-                    Shutdown();
-                    break;
-            }
         }
     }
 
