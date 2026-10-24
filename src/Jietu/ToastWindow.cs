@@ -12,7 +12,7 @@ namespace Jietu;
 /// 入场为阻尼弹簧的「缩放 + 上浮 + 淡入」，退场快速下沉淡出；
 /// 文案切换时胶囊宽度做弹性形变，符合 Apple 通知的形变节奏。
 /// </summary>
-public sealed class ToastWindow : IDisposable
+public sealed class ToastWindow : IDisposable, IToastSink
 {
     public struct AppWindowProxy
     {

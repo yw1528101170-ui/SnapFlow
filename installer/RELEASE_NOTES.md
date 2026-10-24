@@ -13,6 +13,9 @@
 ## 🛠️ {VERSION} 修复与改进
 
 - **依赖安全升级**：内置 SQLite 组件（SQLitePCLRaw）由 2.1.11 升级到 2.1.14，修复已知高危安全公告（GHSA-2m69-gcr7-jv3q）。
+- **工程质量**：剪贴板历史窗口内部实现重构、全量单元测试（45 项）与 CI 自动验证上线。
+
+## 🛠️ 1.1.4 修复与改进
 
 - **剪贴板隐私红线**：尊重密码管理器等工具在剪贴板上附带的「请勿收录」标记（`ExcludeClipboardContentFromMonitorProcessing`、`CanIncludeInClipboardHistory`、`CF_CLIPBOARD_VIEWER_IGNORE`，Windows 剪贴板工具的行业标准契约）。此前仅按前台进程名单过滤，名单外的密码管理器（以及复制后立刻切换窗口的时序绕过）会把一次性密码明文写进历史记录并被全文索引；现在带标记的内容整条跳过，且不会误伤普通复制。
 - **AI 端点安全**：拒绝非本机的 `http://` 明文 AI 接口地址——此前 API Key 与整张截图会以明文出网（代理/网关日志可见）。本地推理服务（Ollama 等）仍可使用 `http://127.0.0.1` 或 `http://localhost`；设置页的「测试连接」同步执行该校验。

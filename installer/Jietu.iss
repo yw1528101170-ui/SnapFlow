@@ -6,7 +6,7 @@
 ; 版本号由 build.ps1 通过 /DMyAppVersion 传入；仅当未传入时才回退到默认值
 ; （回退值需与 src/Jietu/Jietu.csproj 的 <Version> 手动保持一致）
 #ifndef MyAppVersion
-  #define MyAppVersion "1.1.4"
+  #define MyAppVersion "1.1.5"
 #endif
 #define MyAppPublisher "SnapFlow"
 #define MyAppExe "SnapFlow.exe"

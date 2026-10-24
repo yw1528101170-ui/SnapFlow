@@ -6,7 +6,7 @@ internal sealed record PostCaptureContext(
     AppSettings Settings,
     HistoryStore Store,
     ClipboardService Clipboard,
-    ToastWindow Toast,
+    IToastSink Toast,
     Action<string> PinFileAction,
     Action<string> PinTextAction,
     Action<ClipRecord> NotifyHistoryInserted,
