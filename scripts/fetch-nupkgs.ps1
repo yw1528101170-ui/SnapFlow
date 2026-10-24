@@ -34,6 +34,10 @@ $PackageChecksums = @{
     "Microsoft.NET.Test.Sdk|17.14.1"                   = "9995330c5bc5a7bc759caadc9d17748616cdbb983c11062df122a74607614ff0"
     "xunit|2.9.3"                                      = "04fae949b8e5201ecfa07fa8702baca8c0eb3198114194b3793789cc72bf23d7"
     "xunit.runner.visualstudio|3.1.5"                  = "3b9eb9efcf3840695db33b045901420d14d7562141999e06182fb8894faeb124"
+    "ZXing.Net|0.16.10"                                = "d27ace46197fe68b97607943aae6b76c4ca4a7a5ed28044b0f4ba61d33a70350"
+    "Microsoft.WindowsAppSDK.InteractiveExperiences|2.1.9" = "f9159d73e3e46717f159606e43b4acf8336aaff5bdd4d395fe3a93fdb41437ac"
+    "NETStandard.Library|2.0.0"                        = "3e9edf47295a8bc26b1353bef5319f20426b00e9a75932512d613ea8905a84ad"
+    "Microsoft.NETCore.Platforms|1.1.0"                = "15e338d24b5c39b4099389cc612841eb51ff13c07bb4829f97d39b27420e7023"
     # ── 传递依赖（由脚本从官方源下载后计算固化）──────────────────────
     "Microsoft.CodeCoverage|17.14.1"                   = "7fc432b46f06bd1a0fe3baced8a1269c32f1229c9eb1aab6e931630dd5b8d06b"
     "Microsoft.Data.Sqlite.Core|10.0.0"                = "d388d883d11bad073e2c7eb02a1dc048208d6aeeb06791aad2d0d877ca081c0b"
@@ -150,6 +154,35 @@ function Save-Pkg([string]$id, [string]$ver) {
         if ($match.Success) { $len = [int64]$match.Groups[1].Value }
     }
     Remove-Item $probe -Force -ErrorAction SilentlyContinue
+    if ($len -lt 0) {
+        # 精确版本探测失败：个别 nuspec 依赖声明指向从未发布的版本号（例如
+        # WindowsAppSDK 组件声明 2.1.8，官方源上只有 2.1.9）。NuGet 还原时按
+        # “>= 声明版本的最小可用版本”解析，这里遵循同一规则从版本索引回退，
+        # 否则离线缓存会缺包、CI 还原在 NU1101 上失败。
+        try {
+            $indexUrl = "https://api.nuget.org/v3-flatcontainer/$($id.ToLower())/index.json"
+            $indexJson = & curl.exe -4 -s --tls-max 1.2 --retry 3 $indexUrl 2>$null | ConvertFrom-Json
+            $want = [version]$ver
+            $picked = $indexJson.versions |
+                Where-Object { $_ -notmatch '-' -and ([version]$_ -ge $want) } |
+                Sort-Object { [version]$_ } | Select-Object -First 1
+            if ($picked) {
+                Write-Host "RESOLVE $id $ver -> $picked"
+                $ver = $picked
+                $key = "$id|$ver"
+                $name = "{0}.{1}.nupkg" -f $id.ToLower(), $ver.ToLower()
+                $file = Join-Path $dest $name
+                $url = "https://api.nuget.org/v3-flatcontainer/$($id.ToLower())/$($ver.ToLower())/$name"
+                for ($t = 0; $t -lt 6 -and $len -lt 0; $t++) {
+                    if ($t -gt 0) { Start-Sleep -Milliseconds (500 * $t) }
+                    $headers = & curl.exe -4 -s -D - --tls-max 1.2 -H "Range: bytes=0-0" -o $probe $url 2>$null
+                    $match = [regex]::Match(($headers -join "`n"), "Content-Range:\s*bytes\s+\d+-\d+/(\d+)", "IgnoreCase")
+                    if ($match.Success) { $len = [int64]$match.Groups[1].Value }
+                }
+            }
+        }
+        catch { }
+    }
     if ($len -lt 0) { Write-Host "SKIP $id $ver"; return $null }
     Write-Host "GET $name $len"
     $part = "$file.$([System.IO.Path]::GetRandomFileName()).part"
@@ -209,7 +242,8 @@ $seeds = @(
     "Microsoft.Windows.SDK.NET.Ref|10.0.26100.57",
     "Microsoft.NET.Test.Sdk|17.14.1",
     "xunit|2.9.3",
-    "xunit.runner.visualstudio|3.1.5"
+    "xunit.runner.visualstudio|3.1.5",
+    "ZXing.Net|0.16.10"
 )
 $queue = New-Object System.Collections.Generic.Queue[string]
 foreach ($seed in $seeds) { $queue.Enqueue($seed) }
