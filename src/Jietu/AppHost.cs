@@ -18,7 +18,7 @@ public sealed class AppHost
     private readonly HistoryStore _store;
     private readonly OsdWindow _osd;
     private readonly HardwareMonitorService _hardwareMonitor;
-    private AppSettings _settings;
+    private readonly SettingsApplier _settingsApplier;
     private readonly string? _settingsLoadError;
     private readonly string? _storeRecoveryMessage;
     private readonly ConcurrentDictionary<Task, byte> _background = new();
@@ -26,19 +26,21 @@ public sealed class AppHost
     private readonly ClipIngestService _ingest;
     private readonly CaptureOrchestrator _capture;
     private readonly PinManager _pins;
-    private int _retentionDays;
     private long _lastTrayClick;
     private bool _shuttingDown;
     private Task? _purgeLoop;
     private readonly PostCapturePipeline _pipeline;
     private AiVisionWindow? _aiVisionWindow;
 
+    // 设置实例由 SettingsApplier 持有；这里保持只读视图，TryApply 换新实例后所有读取点自动生效。
+    private AppSettings _settings => _settingsApplier.Current;
+
     public AppHost(DispatcherQueue queue)
     {
         _queue = queue;
         AppPaths.Ensure();
         ScreenshotFiles.CleanupTemp();
-        _settings = SettingsService.Load(AppPaths.SettingsFile);
+        var settings = SettingsService.Load(AppPaths.SettingsFile);
         _settingsLoadError = SettingsService.LastLoadError;
         // 基础窗口与剪贴板先建：PinManager 依赖它们，而 HistoryStore 的文件占用回调
         // 又依赖 PinManager——必须保证首个后台清理任务启动时三者都已就位。
@@ -66,7 +68,7 @@ public sealed class AppHost
                 NativeMethods.AllowSetForegroundWindow(Environment.ProcessId);
                 _queue.TryEnqueue(() => OnTray(message, target));
             });
-        _clipboard = new ClipboardService(_message.Handle) { Paused = _settings.Paused };
+        _clipboard = new ClipboardService(_message.Handle) { Paused = settings.Paused };
         _pins = new PinManager(_clipboard, _toast, Track, OpenAiVision);
         _store = new HistoryStore(
             AppPaths.Database,
@@ -76,23 +78,22 @@ public sealed class AppHost
         _ingest = new ClipIngestService(_store);
         // 识别在后台线程完成，经 UI 队列推给历史窗口原地刷新
         _ingest.Recognized += (id, text) => _queue.TryEnqueue(() => _history.NotifyRecognized(id, text));
-        Track(Task.Run(() => PurgeAll(_settings.RetentionDays)));
         _history = new HistoryWindow(this);
         _clipboard.Captured += clip => Track(StoreClipAsync(clip));
-        _tray = new TrayIcon(_message.Handle, _settings.Paused);
+        _tray = new TrayIcon(_message.Handle, settings.Paused);
         // Explorer 崩溃/重启后托盘图标会被系统清空，必须收到 TaskbarCreated 广播后重新添加，
         // 否则本应用没有主窗口，用户将再也无法打开托盘菜单（设置/退出都不可达）。
         _message.TaskbarCreated += () => _queue.TryEnqueue(() => _tray.ReAdd());
         _osd = new OsdWindow();
-        _osd.SetPosition(_settings.OsdPosition);
-        _osd.SetTargetDisplay(_settings.OsdDisplay);
-        _osd.SetEnabled(_settings.ShowOsd);
+        _osd.SetPosition(settings.OsdPosition);
+        _osd.SetTargetDisplay(settings.OsdDisplay);
+        _osd.SetEnabled(settings.ShowOsd);
         _hardwareMonitor = new HardwareMonitorService();
         // 冷启动提速：Enabled=true 会同步触发 NVML/PDH 初始化（加载 nvml.dll、枚举适配器、
         // 建 PDH 查询），是启动路径上的重活。延迟几百毫秒再开始采样，OSD 头一两秒显示空指标
         // 完全可接受。DispatcherQueueTimer 回调在 UI 线程执行，与 ToggleOsd/SetOsdEnabled
         // 里的 Enabled 赋值天然串行，不存在并发初始化；Enabled setter 对相同值幂等。
-        if (_settings.ShowOsd)
+        if (settings.ShowOsd)
         {
             var delayedSampling = _queue.CreateTimer();
             delayedSampling.Interval = TimeSpan.FromMilliseconds(600);
@@ -147,6 +148,19 @@ public sealed class AppHost
                 Log.Error(ex);
             }
         };
+        // 设置的应用器最后创建（依赖上面全部就位）；启动清理任务从此挂到它上面
+        _settingsApplier = new SettingsApplier(
+            settings,
+            _message.Handle,
+            _store,
+            _osd,
+            _hardwareMonitor,
+            _clipboard,
+            _history,
+            _tray,
+            _toast,
+            Track);
+        Track(Task.Run(() => _settingsApplier.PurgeAll(settings.RetentionDays)));
     }
 
     public AppSettings Settings => _settings;
@@ -159,7 +173,6 @@ public sealed class AppHost
 
     public void Start()
     {
-        _retentionDays = _settings.RetentionDays;
         SensitiveForeground.SetIgnored(_settings.IgnoredProcesses);
         SensitiveForeground.SetRecordTerminals(_settings.RecordTerminals);
         _clipboard.Listen();
@@ -170,8 +183,8 @@ public sealed class AppHost
         if (startup != _settings.RunAtStartup)
         {
             _settings.RunAtStartup = startup;
-            Log.Info("已采纳注册表里的开机自启动项。");
-            SaveSettings();
+            Log.Info("已采纳注册表里的开机自启项。");
+            _settingsApplier.Save();
         }
 
         if (_settingsLoadError != null)
@@ -179,7 +192,7 @@ public sealed class AppHost
             // 设置文件损坏时 SettingsService 已把坏文件改名备份并回退默认值；这里补一条可见提示，
             // 并把默认配置写回磁盘，避免每次启动都重新报错。
             Log.Info("设置已恢复默认：" + _settingsLoadError);
-            SaveSettings();
+            _settingsApplier.Save();
             _queue.TryEnqueue(() => _toast.Show("设置文件损坏，已备份并恢复默认"));
         }
         _purgeLoop = PurgeLoopAsync(_lifetime.Token);
@@ -189,7 +202,7 @@ public sealed class AppHost
             Log.Info("历史库已恢复：" + _storeRecoveryMessage);
             _queue.TryEnqueue(() => _toast.Show(_storeRecoveryMessage));
         }
-        var error = RegisterCurrent();
+        var error = _settingsApplier.RegisterCurrent();
         if (error != null)
         {
             Log.Error(error);
@@ -232,7 +245,7 @@ public sealed class AppHost
             Log.Info("停止清理：" + ex.Message);
         }
 
-        Safe(UnregisterHotkeys);
+        Safe(_settingsApplier.UnregisterHotkeys);
         Safe(_clipboard.Unlisten);
         Safe(_tray.Dispose);
         Safe(_message.Destroy);
@@ -305,15 +318,7 @@ public sealed class AppHost
         _history.Reload();
     }
 
-    public void SetPaused(bool paused)
-    {
-        _settings.Paused = paused;
-        _clipboard.Paused = paused;
-        SaveSettings();
-        _history.SetPaused(paused);
-        _tray.UpdateTip(paused);
-        _toast.Show(paused ? "已暂停剪贴板记录" : "已恢复剪贴板记录");
-    }
+    public void SetPaused(bool paused) => _settingsApplier.SetPaused(paused);
 
     /// <summary>记录后台任务，退出时最多等 1.5s 再释放 SQLite 连接；异常在这里观察掉，避免未观察异常。</summary>
     private void Track(Task task)
@@ -343,43 +348,11 @@ public sealed class AppHost
             TaskScheduler.Default);
     }
 
-    /// <summary>保存设置；写盘失败时必须让用户看见，而不是静默停在“内存已改、磁盘没写”的状态。</summary>
-    private void SaveSettings()
-    {
-        if (!SettingsService.Save(AppPaths.SettingsFile, _settings))
-        {
-            _toast.Show(SettingsService.LastSaveError ?? "设置无法写入磁盘。");
-        }
-    }
-
     public void CloseAllPins() => _pins.CloseAll();
-
-    private void ToggleStartup()
-    {
-        _settings.RunAtStartup = !_settings.RunAtStartup;
-        StartupService.Apply(_settings.RunAtStartup);
-        SaveSettings();
-        _toast.Show(_settings.RunAtStartup ? "已开启开机自启动" : "已关闭开机自启动");
-    }
-
-    /// <summary>保存目录生效值：未自定义时落在「图片\SnapFlow」。</summary>
-    private string EffectiveSaveFolder()
-        => string.IsNullOrWhiteSpace(_settings.SaveFolder) ? ScreenshotFiles.DefaultFolder : _settings.SaveFolder;
-
-    /// <summary>
-    /// 历史库与「保存到文件夹」的截图共用同一套保留期：历史图片随库清理，
-    /// 保存目录里的 SnapFlow-*.png 副本若不跟着清理，会无限累积、敏感截图长期留存。
-    /// </summary>
-    private int PurgeAll(int retentionDays)
-    {
-        var removed = _store.Purge(retentionDays);
-        removed += ScreenshotFiles.PurgeSaved(EffectiveSaveFolder(), retentionDays);
-        return removed;
-    }
 
     private void OpenScreenshotFolder()
     {
-        var folder = EffectiveSaveFolder();
+        var folder = _settingsApplier.EffectiveSaveFolder();
         try
         {
             Directory.CreateDirectory(folder);
@@ -418,7 +391,7 @@ public sealed class AppHost
             try
             {
                 // 先放开热键与单实例互斥体，让新进程能立刻注册成功；随后再由 Shutdown 做完整清理。
-                UnregisterHotkeys();
+                _settingsApplier.UnregisterHotkeys();
                 SingleInstance.Stop();
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
@@ -435,68 +408,7 @@ public sealed class AppHost
         Shutdown();
     }
 
-    public string? TryApply(AppSettings next)
-    {
-        if (!TryParseAll(next, out var shot, out var history, out var error))
-        {
-            return error;
-        }
-
-        next.RetentionDays = Math.Clamp(next.RetentionDays, AppSettings.MinRetentionDays, AppSettings.MaxRetentionDays);
-        next.IgnoredProcesses = ProcessNames.Normalize(next.IgnoredProcesses);
-        next.SaveFolder = (next.SaveFolder ?? "").Trim();
-        if (next.SaveScreenshots)
-        {
-            if (string.IsNullOrWhiteSpace(next.SaveFolder))
-            {
-                next.SaveFolder = ScreenshotFiles.DefaultFolder;
-            }
-
-            try
-            {
-                Directory.CreateDirectory(next.SaveFolder);
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex);
-                return "保存位置无法使用，请换一个文件夹。";
-            }
-        }
-
-        error = Register(shot, history);
-        if (error != null)
-        {
-            RegisterCurrent();
-            return error;
-        }
-
-        // 先落盘、再改运行时：写盘失败时回滚热键并保持旧设置，避免「界面看起来改了、重启后回退」。
-        if (!SettingsService.Save(AppPaths.SettingsFile, next))
-        {
-            RegisterCurrent();
-            return SettingsService.LastSaveError ?? "设置无法写入磁盘。";
-        }
-
-        var retentionChanged = next.RetentionDays != _settings.RetentionDays;
-        _settings = next;
-        _osd.SetEnabled(next.ShowOsd);
-        _hardwareMonitor.Enabled = next.ShowOsd;
-        _osd.SetPosition(next.OsdPosition);
-        _osd.SetTargetDisplay(next.OsdDisplay);
-        _retentionDays = next.RetentionDays;
-        SensitiveForeground.SetIgnored(next.IgnoredProcesses);
-        SensitiveForeground.SetRecordTerminals(next.RecordTerminals);
-        _clipboard.Paused = next.Paused;
-        StartupService.Apply(next.RunAtStartup);
-        if (retentionChanged)
-        {
-            // 只有保留天数真的变了才清理，避免「改个开关就触发全库 Purge」。
-            Track(Task.Run(() => PurgeAll(next.RetentionDays)));
-        }
-        _history.SetPaused(next.Paused);
-        _tray.UpdateTip(next.Paused);
-        return null;
-    }
+    public string? TryApply(AppSettings next) => _settingsApplier.TryApply(next);
 
     public string? ReadText(string id) => _store.GetText(id);
 
@@ -720,25 +632,25 @@ public sealed class AppHost
                     _pins.RestoreGhosts();
                     break;
                 case TrayCommand.ToggleOsd:
-                    ToggleOsd();
+                    _settingsApplier.ToggleOsd();
                     break;
                 case TrayCommand.OsdPositionTopRight:
-                    SetOsdPosition("TopRight");
+                    _settingsApplier.SetOsdPosition("TopRight");
                     break;
                 case TrayCommand.OsdPositionTopLeft:
-                    SetOsdPosition("TopLeft");
+                    _settingsApplier.SetOsdPosition("TopLeft");
                     break;
                 case TrayCommand.OsdDisplayPrimary:
-                    SetOsdDisplay("Primary");
+                    _settingsApplier.SetOsdDisplay("Primary");
                     break;
                 case TrayCommand.OsdDisplayFollowCursor:
-                    SetOsdDisplay("FollowCursor");
+                    _settingsApplier.SetOsdDisplay("FollowCursor");
                     break;
                 case TrayCommand.TogglePause:
                     SetPaused(!_settings.Paused);
                     break;
                 case TrayCommand.ToggleStartup:
-                    ToggleStartup();
+                    _settingsApplier.ToggleStartup();
                     break;
                 case TrayCommand.ShowSettings:
                     EnsureSettingsWindow().Show(null);
@@ -807,55 +719,6 @@ public sealed class AppHost
 
     public void RestoreGhostPins() => _pins.RestoreGhosts();
 
-    private string? RegisterCurrent()
-    {
-        if (!TryParseAll(_settings, out var shot, out var history, out var error))
-        {
-            return error;
-        }
-
-        return Register(shot, history);
-    }
-
-    private string? Register(HotkeyGesture shot, HotkeyGesture history)
-    {
-        UnregisterHotkeys();
-        var items = new (int Id, HotkeyGesture Gesture)[] { (1, shot), (2, history) };
-        var failed = new List<string>();
-        foreach (var item in items)
-        {
-            if (!NativeMethods.RegisterHotKey(_message.Handle, item.Id, item.Gesture.Modifiers | NativeMethods.ModNoRepeat, item.Gesture.VirtualKey))
-            {
-                var code = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
-                failed.Add($"{item.Gesture.Display}（错误 {code}）");
-            }
-        }
-
-        return failed.Count == 0 ? null : "这些热键已被其他软件占用：" + string.Join("、", failed) + "。请换一个。";
-    }
-
-    private void UnregisterHotkeys()
-    {
-        // Register 只注册 1（截屏）和 2（历史），反注册范围保持一致即可
-        for (var id = 1; id <= 2; id++)
-        {
-            NativeMethods.UnregisterHotKey(_message.Handle, id);
-        }
-    }
-
-    private static bool TryParseAll(
-        AppSettings settings,
-        out HotkeyGesture shot,
-        out HotkeyGesture history,
-        out string? error)
-    {
-        shot = history = default;
-        if (!HotkeyGesture.TryParse(settings.RegionHotkey, out shot, out error)) return false;
-        if (!HotkeyGesture.TryParse(settings.HistoryHotkey, out history, out error)) return false;
-        error = HotkeyGesture.DuplicateMessage([shot, history]);
-        return error == null;
-    }
-
     public void RecognizeImage(string id, byte[] png, bool force = false)
         => Track(Task.Run(() => _ingest.RecognizeAsync(id, png, force, _lifetime.Token)));
 
@@ -874,7 +737,7 @@ public sealed class AppHost
                 int removed;
                 try
                 {
-                    removed = PurgeAll(_retentionDays);
+                    removed = _settingsApplier.PurgeAll(_settingsApplier.Current.RetentionDays);
                 }
                 catch (Exception ex)
                 {
@@ -897,45 +760,5 @@ public sealed class AppHost
         catch (OperationCanceledException)
         {
         }
-    }
-
-    public void ToggleOsd()
-    {
-        _settings.ShowOsd = !_settings.ShowOsd;
-        _osd.SetEnabled(_settings.ShowOsd);
-        _hardwareMonitor.Enabled = _settings.ShowOsd;
-        SaveSettings();
-        _toast.Show(_settings.ShowOsd ? "已开启性能悬浮窗" : "已关闭性能悬浮窗");
-    }
-
-    public void SetOsdEnabled(bool enabled)
-    {
-        if (_settings.ShowOsd == enabled) return;
-        _settings.ShowOsd = enabled;
-        _osd.SetEnabled(enabled);
-        _hardwareMonitor.Enabled = enabled;
-        SaveSettings();
-    }
-
-    public void SetOsdPosition(string position)
-    {
-        _settings.OsdPosition = position;
-        _osd.SetPosition(position);
-        SaveSettings();
-        _toast.Show(string.Equals(position, "TopLeft", StringComparison.OrdinalIgnoreCase) ? "悬浮窗已移至左上角" : "悬浮窗已移至右上角");
-    }
-
-    public void SetOsdDisplay(string display)
-    {
-        _settings.OsdDisplay = display;
-        _osd.SetTargetDisplay(display);
-        SaveSettings();
-        _toast.Show(string.Equals(display, "FollowCursor", StringComparison.OrdinalIgnoreCase) ? "悬浮窗将跟随鼠标所在屏幕" : "悬浮窗已固定在主显示器");
-    }
-
-    public void SetOsdHideOnCapture(bool hide)
-    {
-        _settings.OsdHideOnCapture = hide;
-        SaveSettings();
     }
 }
