@@ -1,0 +1,22 @@
+# Build outputs
+bin/
+obj/
+artifacts/
+dist/
+.build-check*.xbf
+.buildcheck/
+.buildcheck-build.log
+
+# 历史遗留：曾把构建命令参数误当输出目录生成的临时构建产物
+src/Jietu/jietu.buildcheck*/
+
+# Dependencies & caches
+.nupkg-cache/
+
+# 本地 AI 工作记录（审计 / 修复 / 预览 / 截图 / 备份，不属于发布内容）
+.workbuddy/
+.vs/
+*.user
+*.suo
+TestResults/
+*.log

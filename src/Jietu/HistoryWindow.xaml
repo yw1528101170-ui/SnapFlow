@@ -1,0 +1,478 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Jietu.HistoryWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="剪贴板历史">
+    <Grid x:Name="Root" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+          KeyDown="OnKeyDown" PreviewKeyDown="OnPreviewKeyDown" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto">
+        <Grid.Resources>
+            <ResourceDictionary>
+                <!-- 搜索框外层自绘外壳，内层 TextBox 彻底扁平化 -->
+                <Thickness x:Key="TextControlBorderThemeThickness">0</Thickness>
+                <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
+                <SolidColorBrush x:Key="TextControlBackground" Color="Transparent"/>
+                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent"/>
+                <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent"/>
+                <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent"/>
+                <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent"/>
+
+                <!-- 搜索输入：去掉默认模板的删除按钮与聚焦下划线，文字垂直居中 -->
+                <Style x:Key="HistSearchBoxStyle" TargetType="TextBox">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Padding" Value="6,0"/>
+                    <Setter Property="FontSize" Value="12.5"/>
+                    <Setter Property="MinHeight" Value="0"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                    <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TextBox">
+                                <Grid Background="Transparent">
+                                    <ScrollViewer x:Name="ContentElement"
+                                                  Background="Transparent"
+                                                  Padding="{TemplateBinding Padding}"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Stretch"
+                                                  HorizontalScrollMode="Auto"
+                                                  HorizontalScrollBarVisibility="Hidden"
+                                                  VerticalScrollMode="Disabled"
+                                                  VerticalScrollBarVisibility="Hidden"
+                                                  IsTabStop="False"
+                                                  AutomationProperties.AccessibilityView="Raw"/>
+                                    <ContentPresenter x:Name="PlaceholderTextContentPresenter"
+                                                      Content="{TemplateBinding PlaceholderText}"
+                                                      Padding="{TemplateBinding Padding}"
+                                                      Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalAlignment="Left"
+                                                      IsHitTestVisible="False"/>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+
+                <!-- 分段控件（Apple Segmented Control）中的单个分段：自绘模板保证文字严格居中 -->
+                <Style x:Key="HistSegmentStyle" TargetType="Button">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="MinWidth" Value="0"/>
+                    <Setter Property="MinHeight" Value="0"/>
+                    <Setter Property="Height" Value="28"/>
+                    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                    <Setter Property="CornerRadius" Value="7"/>
+                    <Setter Property="FontSize" Value="12"/>
+                    <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <Setter Property="UseSystemFocusVisuals" Value="False"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Grid x:Name="SegmentRoot" Background="Transparent">
+                                    <VisualStateManager.VisualStateGroups>
+                                        <VisualStateGroup x:Name="CommonStates">
+                                            <VisualStateGroup.Transitions>
+                                                <VisualTransition GeneratedDuration="0:0:0.12">
+                                                    <VisualTransition.GeneratedEasingFunction>
+                                                        <CubicEase EasingMode="EaseOut"/>
+                                                    </VisualTransition.GeneratedEasingFunction>
+                                                </VisualTransition>
+                                            </VisualStateGroup.Transitions>
+                                            <VisualState x:Name="Normal"/>
+                                            <VisualState x:Name="PointerOver">
+                                                <VisualState.Setters>
+                                                    <Setter Target="HoverPlate.Background" Value="{ThemeResource SubtleFillColorTertiaryBrush}"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Pressed">
+                                                <VisualState.Setters>
+                                                    <Setter Target="HoverPlate.Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Disabled"/>
+                                        </VisualStateGroup>
+                                    </VisualStateManager.VisualStateGroups>
+                                    <Border x:Name="HoverPlate" Background="Transparent"
+                                            CornerRadius="{TemplateBinding CornerRadius}"/>
+                                    <ContentPresenter Content="{TemplateBinding Content}"
+                                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                      HorizontalAlignment="Stretch"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalContentAlignment="Center"/>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+
+                <!-- 行内动作按钮：悬停才淡入，常态完全隐形 -->
+                <Style x:Key="HistRowActionStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                    <Setter Property="Width" Value="22"/>
+                    <Setter Property="Height" Value="26"/>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="MinWidth" Value="0"/>
+                    <Setter Property="MinHeight" Value="0"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="CornerRadius" Value="6"/>
+                    <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <Setter Property="UseSystemFocusVisuals" Value="False"/>
+                </Style>
+
+                <!-- 键帽：快捷键数字 -->
+                <Style x:Key="HistKeycapStyle" TargetType="Border">
+                    <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}"/>
+                    <Setter Property="BorderBrush" Value="{ThemeResource HistRowStrokeBrush}"/>
+                    <Setter Property="BorderThickness" Value="1"/>
+                    <Setter Property="CornerRadius" Value="4"/>
+                    <Setter Property="Width" Value="15"/>
+                    <Setter Property="Height" Value="15"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                </Style>
+
+                <Style x:Key="HistMetaTextStyle" TargetType="TextBlock">
+                    <Setter Property="FontSize" Value="10.5"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                    <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}"/>
+                </Style>
+            </ResourceDictionary>
+        </Grid.Resources>
+
+        <!-- ① 标题栏：应用色块 + 标题 + 结果数 -->
+        <Border Grid.Row="0" BorderBrush="{ThemeResource HistDividerBrush}" BorderThickness="0,0,0,1">
+            <Grid Height="48" ColumnDefinitions="*,138">
+                <Grid x:Name="TitleBar" Background="Transparent">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="14,0,0,0" VerticalAlignment="Center">
+                        <Border Width="26" Height="26" CornerRadius="7" VerticalAlignment="Center">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#4F8CFF" Offset="0"/>
+                                    <GradientStop Color="#7341F5" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <FontIcon Glyph="&#xE8C8;" FontSize="12" Foreground="White"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel VerticalAlignment="Center" Spacing="0">
+                            <TextBlock Text="剪贴板历史" FontSize="14" FontWeight="SemiBold"
+                                       CharacterSpacing="-12" Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                            <TextBlock x:Name="HeaderMeta" Text="" FontSize="10.5" Margin="0,-1,0,0"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- ② 搜索：胶囊输入框 + 聚焦光圈 -->
+        <Grid Grid.Row="1" Padding="12,10,12,8">
+            <Border x:Name="SearchShell" Height="34" CornerRadius="10"
+                    Background="{ThemeResource HistFieldFillBrush}"
+                    BorderBrush="{ThemeResource HistFieldStrokeBrush}" BorderThickness="1">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <FontIcon Glyph="&#xE721;" FontSize="12" Margin="11,0,0,0" IsHitTestVisible="False"
+                              VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                    <TextBox x:Name="SearchBox" Grid.Column="1" Style="{StaticResource HistSearchBoxStyle}"
+                             PlaceholderText="搜索剪贴板历史"
+                             TextChanged="OnSearch" KeyDown="OnKeyDown"
+                             GotFocus="OnSearchFocus" LostFocus="OnSearchFocusOut"
+                             AutomationProperties.Name="搜索历史"/>
+                    <Button x:Name="ClearSearchButton" Grid.Column="2" Style="{StaticResource HistRowActionStyle}"
+                            Width="20" Height="20" Margin="0,0,7,0" Visibility="Collapsed"
+                            Click="OnClearSearch" ToolTipService.ToolTip="清空搜索">
+                        <FontIcon Glyph="&#xE711;" FontSize="8.5"/>
+                    </Button>
+                </Grid>
+            </Border>
+            <Border x:Name="SearchFocusRing" CornerRadius="10" BorderThickness="1" Opacity="0"
+                    IsHitTestVisible="False" BorderBrush="{ThemeResource HistFocusRingBrush}"/>
+        </Grid>
+
+        <!-- ③ 分段筛选：滑块随选中项弹簧式平移 -->
+        <Grid Grid.Row="2" Margin="12,0,12,8" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <Grid x:Name="FilterStrip" Height="34" CornerRadius="9" Background="{ThemeResource HistSegmentTrackBrush}"
+                  SizeChanged="OnFilterStripSizeChanged">
+                <Border x:Name="SegThumb" Height="28" Width="60" CornerRadius="7" Margin="3,0,0,0"
+                        HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False"
+                        Background="{ThemeResource HistSegmentThumbBrush}">
+                    <Border.RenderTransform>
+                        <CompositeTransform x:Name="SegThumbTr"/>
+                    </Border.RenderTransform>
+                </Border>
+                <Grid ColumnDefinitions="*,*,*,*,*" Margin="3,0">
+                    <Button x:Name="FilterAllButton" Style="{StaticResource HistSegmentStyle}"
+                            Click="OnFilterClick" Tag="All" CornerRadius="7">
+                        <TextBlock Text="全部" FontSize="12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{Binding Foreground, ElementName=FilterAllButton}"
+                                   FontWeight="{Binding FontWeight, ElementName=FilterAllButton}"/>
+                    </Button>
+                    <Button x:Name="FilterTextButton" Grid.Column="1" Style="{StaticResource HistSegmentStyle}"
+                            Click="OnFilterClick" Tag="Text" CornerRadius="7">
+                        <TextBlock Text="文本" FontSize="12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{Binding Foreground, ElementName=FilterTextButton}"
+                                   FontWeight="{Binding FontWeight, ElementName=FilterTextButton}"/>
+                    </Button>
+                    <Button x:Name="FilterImageButton" Grid.Column="2" Style="{StaticResource HistSegmentStyle}"
+                            Click="OnFilterClick" Tag="Image" CornerRadius="7">
+                        <TextBlock Text="图片" FontSize="12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{Binding Foreground, ElementName=FilterImageButton}"
+                                   FontWeight="{Binding FontWeight, ElementName=FilterImageButton}"/>
+                    </Button>
+                    <Button x:Name="FilterShotButton" Grid.Column="3" Style="{StaticResource HistSegmentStyle}"
+                            Click="OnFilterClick" Tag="Shot" CornerRadius="7">
+                        <TextBlock Text="截图" FontSize="12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{Binding Foreground, ElementName=FilterShotButton}"
+                                   FontWeight="{Binding FontWeight, ElementName=FilterShotButton}"/>
+                    </Button>
+                    <Button x:Name="FilterPinnedButton" Grid.Column="4" Style="{StaticResource HistSegmentStyle}"
+                            Click="OnFilterClick" Tag="Pinned" CornerRadius="7">
+                        <TextBlock Text="已固定" FontSize="12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{Binding Foreground, ElementName=FilterPinnedButton}"
+                                   FontWeight="{Binding FontWeight, ElementName=FilterPinnedButton}"/>
+                    </Button>
+                </Grid>
+            </Grid>
+
+            <Button x:Name="ClearButton" Grid.Column="1" Style="{StaticResource QuietButtonStyle}"
+                    Padding="8,4" VerticalAlignment="Center" ToolTipService.ToolTip="清空未固定的历史记录">
+                <Button.Flyout>
+                    <Flyout x:Name="ClearConfirmFlyout" Placement="BottomEdgeAlignedRight">
+                        <StackPanel Spacing="10" Width="230">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <Border Width="26" Height="26" CornerRadius="13" Background="#1FD83B01" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE74D;" FontSize="12" Foreground="#D83B01"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock Text="清空未固定记录" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBlock Text="确定清空所有未固定的历史记录吗？已固定的项目将被保留。"
+                                       TextWrapping="Wrap" FontSize="12" LineHeight="17"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            <Grid ColumnDefinitions="*,*" Margin="0,2,0,0" ColumnSpacing="8">
+                                <Button Content="取消" HorizontalAlignment="Stretch" FontSize="12" Padding="0,5"
+                                        CornerRadius="7" Click="OnCancelClear"/>
+                                <Button Content="确认清空" Style="{ThemeResource AccentButtonStyle}" Grid.Column="1"
+                                        HorizontalAlignment="Stretch" FontSize="12" Padding="0,5"
+                                        CornerRadius="7" Click="OnConfirmClear"/>
+                            </Grid>
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE74D;" FontSize="10.5" Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                    <TextBlock Text="清空" FontSize="11.5" Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <InfoBar x:Name="PausedBar" Grid.Row="3" Margin="12,0,12,8" IsOpen="False" IsClosable="False"
+                 Severity="Warning" CornerRadius="10" BorderThickness="0"
+                 Message="记录已暂停，新的复制不会进入历史"/>
+
+        <!-- ④ 历史列表 -->
+        <Grid Grid.Row="4">
+            <ListView x:Name="ItemList" SelectionMode="Single"
+                      Background="Transparent"
+                      IsItemClickEnabled="True"
+                      ItemClick="OnItemClick"
+                      SelectionChanged="OnSelectionChanged"
+                      ContainerContentChanging="OnContainerChanging"
+                      ItemContainerStyle="{StaticResource HistoryItemStyle}"
+                      Padding="0,4,0,6">
+                <ListView.ItemContainerTransitions>
+                    <TransitionCollection>
+                        <RepositionThemeTransition/>
+                    </TransitionCollection>
+                </ListView.ItemContainerTransitions>
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Border x:Name="RowSurface" Background="Transparent" CornerRadius="10" Padding="10,6"
+                                PointerEntered="OnRowPointerEntered" PointerExited="OnRowPointerExited"
+                                RightTapped="OnItemRightTapped">
+                            <Grid ColumnDefinitions="52,*,Auto" ColumnSpacing="10">
+                                <!-- 左栏固定 52×40：缩略图与类型徽标共用同一条轨道，
+                                     所有行（含纯文本行）正文左边缘因此严格对齐 -->
+                                <Grid Height="40" VerticalAlignment="Center">
+                                    <Border CornerRadius="8" Visibility="{Binding ImageVisibility}"
+                                            BorderBrush="{ThemeResource HistRowStrokeBrush}" BorderThickness="1"
+                                            Background="{ThemeResource HistThumbFillBrush}">
+                                        <Border CornerRadius="7">
+                                            <Border.Background>
+                                                <ImageBrush ImageSource="{Binding Thumbnail}" Stretch="UniformToFill"
+                                                            AlignmentX="Left" AlignmentY="Top"/>
+                                            </Border.Background>
+                                        </Border>
+                                    </Border>
+                                    <Border Width="28" Height="28" CornerRadius="8" HorizontalAlignment="Left"
+                                            VerticalAlignment="Center" Visibility="{Binding TextVisibility}"
+                                            Background="{ThemeResource HistBadgeFillBrush}">
+                                        <FontIcon Glyph="{Binding KindGlyph}" FontSize="12"
+                                                  Foreground="{ThemeResource SnapFlowAccentBrush}"/>
+                                    </Border>
+                                </Grid>
+
+                                <!-- 正文 + 元信息：正文顶对齐、元信息紧随其后，
+                                     行高随正文行数自然伸缩，不会出现正文与元信息之间的大空隙 -->
+                                <Grid Grid.Column="1" RowDefinitions="Auto,Auto" RowSpacing="4"
+                                      VerticalAlignment="Center">
+                                    <Grid VerticalAlignment="Top">
+                                        <TextBlock Visibility="{Binding TextVisibility}" Text="{Binding Preview}"
+                                                   TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                                                   FontSize="12.5" LineHeight="18"
+                                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Visibility="{Binding HasRecognizedTextVisibility}"
+                                                   Text="{Binding RecognizedTextSnippet}"
+                                                   TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                                                   FontSize="12.5" LineHeight="18"
+                                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                                        <TextBlock Visibility="{Binding ImageNoTextVisibility}"
+                                                   Text="未识别到文字" FontSize="11.5" VerticalAlignment="Center"
+                                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                                    </Grid>
+                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="6"
+                                                VerticalAlignment="Center" Height="15">
+                                        <Border Style="{StaticResource HistKeycapStyle}"
+                                                Visibility="{Binding HasShortcutVisibility}">
+                                            <TextBlock Text="{Binding Shortcut}" HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center" FontSize="9" FontWeight="SemiBold"
+                                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                                        </Border>
+                                        <Border Visibility="{Binding PinOnVisibility}" CornerRadius="7" Padding="5,1"
+                                                VerticalAlignment="Center"
+                                                Background="{ThemeResource SnapFlowAccentLightBrush}"
+                                                BorderBrush="{ThemeResource SnapFlowAccentBorderBrush}" BorderThickness="1">
+                                            <StackPanel Orientation="Horizontal" Spacing="3">
+                                                <FontIcon Glyph="&#xE840;" FontSize="8" Foreground="{ThemeResource SnapFlowAccentBrush}"/>
+                                                <TextBlock Text="已固定" FontSize="9" FontWeight="SemiBold"
+                                                           Foreground="{ThemeResource SnapFlowAccentBrush}"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <TextBlock Text="{Binding TimeText}" Style="{StaticResource HistMetaTextStyle}"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- 行内动作：只保留最高频的四项，其余走右键菜单；
+                                     默认隐形，悬停/选中淡入 -->
+                                <StackPanel x:Name="RowActions" Grid.Column="2" Orientation="Horizontal"
+                                            Spacing="0" VerticalAlignment="Center" Opacity="0" Tag="row-actions">
+                                    <Button Click="OnTogglePreviewClick" Style="{StaticResource HistRowActionStyle}"
+                                            Visibility="{Binding HasRecognizedTextVisibility}"
+                                            ToolTipService.ToolTip="查看识别文字">
+                                        <FontIcon Glyph="&#xE8A5;" FontSize="10.5"/>
+                                    </Button>
+                                    <Button Click="OnTogglePreviewClick" Style="{StaticResource HistRowActionStyle}"
+                                            Visibility="{Binding TextVisibility}"
+                                            ToolTipService.ToolTip="查看全文">
+                                        <FontIcon Glyph="&#xE8A5;" FontSize="10.5"/>
+                                    </Button>
+                                    <Button Click="OnCopyItemClick" Style="{StaticResource HistRowActionStyle}"
+                                            ToolTipService.ToolTip="复制">
+                                        <FontIcon Glyph="&#xE8C8;" FontSize="10.5"/>
+                                    </Button>
+                                    <Button Click="OnPinClick" Style="{StaticResource HistRowActionStyle}"
+                                            ToolTipService.ToolTip="{Binding PinTip}">
+                                        <Grid>
+                                            <FontIcon Glyph="&#xE840;" FontSize="11" Visibility="{Binding PinOffVisibility}"/>
+                                            <FontIcon Glyph="&#xE840;" FontSize="11" Visibility="{Binding PinOnVisibility}"
+                                                      Foreground="{ThemeResource SnapFlowAccentBrush}"/>
+                                        </Grid>
+                                    </Button>
+                                    <Button Click="OnDeleteClick" Style="{StaticResource HistRowActionStyle}"
+                                            ToolTipService.ToolTip="删除">
+                                        <FontIcon Glyph="&#xE74D;" FontSize="10.5"/>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Spacing="14" Visibility="Collapsed" IsHitTestVisible="False">
+                <Border Width="72" Height="72" CornerRadius="24" HorizontalAlignment="Center"
+                        Background="{ThemeResource HistBadgeFillBrush}">
+                    <FontIcon x:Name="EmptyIcon" Glyph="&#xE77F;" FontSize="26"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Foreground="{ThemeResource SnapFlowAccentBrush}"/>
+                </Border>
+                <StackPanel Spacing="5">
+                    <TextBlock x:Name="EmptyText" HorizontalAlignment="Center" FontSize="13.5" FontWeight="SemiBold"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock HorizontalAlignment="Center" MaxWidth="240" TextAlignment="Center" TextWrapping="Wrap"
+                               FontSize="11.5" LineHeight="17"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                               Text="按 Ctrl+C 复制文本或截图后自动进入历史"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- ⑤ 底部快捷键提示 -->
+        <Grid Grid.Row="5" Height="28" Margin="14,0,14,2">
+            <TextBlock Text="↑↓ 选择   ↵ 粘贴   Del 删除   Esc 关闭"
+                       FontSize="10.5" VerticalAlignment="Center" HorizontalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+        </Grid>
+
+        <!-- ⑥ 悬浮预览卡片：从下方弹出 -->
+        <Border x:Name="PreviewHost" Grid.Row="6" Visibility="Collapsed" Margin="10,0,10,10"
+                CornerRadius="12" MaxHeight="200" RenderTransformOrigin="0.5,1"
+                Background="{ThemeResource HistPanelFillBrush}"
+                BorderBrush="{ThemeResource HistRowStrokeBrush}" BorderThickness="1"
+                SizeChanged="OnPreviewHostSizeChanged">
+            <Border.RenderTransform>
+                <CompositeTransform x:Name="PreviewTr"/>
+            </Border.RenderTransform>
+            <Grid RowDefinitions="Auto,*">
+                <Grid Margin="14,9,8,4" ColumnDefinitions="*,Auto">
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <FontIcon x:Name="PreviewTypeIcon" Glyph="&#xE8C1;" FontSize="11.5"
+                                  Foreground="{ThemeResource SnapFlowAccentBrush}"/>
+                        <TextBlock x:Name="PreviewCaption" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="PreviewStats" FontSize="10.5" Margin="4,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+                        <Button x:Name="CopyPreviewButton" Style="{StaticResource QuietButtonStyle}"
+                                Padding="8,3" CornerRadius="6" Click="OnCopyPreviewClick"
+                                ToolTipService.ToolTip="复制文字到剪贴板">
+                            <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                <FontIcon x:Name="CopyPreviewIcon" Glyph="&#xE8C8;" FontSize="10.5"/>
+                                <TextBlock x:Name="CopyPreviewText" Text="复制" FontSize="11.5"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource HistRowActionStyle}" Width="22" Height="22"
+                                Click="OnClosePreviewClick" ToolTipService.ToolTip="关闭预览 (Esc)">
+                            <FontIcon Glyph="&#xE711;" FontSize="9"/>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+                <ScrollViewer Grid.Row="1"
+                              HorizontalScrollMode="Disabled"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto"
+                              Padding="14,0,14,10">
+                    <TextBlock x:Name="PreviewText" TextWrapping="Wrap" FontSize="12.5" LineHeight="19"
+                               HorizontalAlignment="Stretch" IsTextSelectionEnabled="True" IsTabStop="False"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- 窗口内描边：给玻璃材质一道极细的高光边 -->
+        <Border Grid.RowSpan="7" IsHitTestVisible="False" CornerRadius="8" BorderThickness="1"
+                BorderBrush="{ThemeResource HistEdgeBrush}"/>
+    </Grid>
+</Window>

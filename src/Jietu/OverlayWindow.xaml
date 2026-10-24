@@ -1,0 +1,667 @@
+<Window
+    x:Class="Jietu.OverlayWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid x:Name="Root" Background="Black" UseLayoutRounding="True">
+        <Grid.Resources>
+            <ResourceDictionary>
+                <!-- 苹果风毛玻璃材质：半透明渐变 + 1px 高光边 + 双层柔阴影 -->
+                <ResourceDictionary.ThemeDictionaries>
+                    <ResourceDictionary x:Key="Default">
+                        <LinearGradientBrush x:Key="OverlayGlassBrush" StartPoint="0,0" EndPoint="0.4,1">
+                            <GradientStop Color="#E62E2E30" Offset="0"/>
+                            <GradientStop Color="#E619191B" Offset="1"/>
+                        </LinearGradientBrush>
+                        <SolidColorBrush x:Key="OverlayGlassBorderBrush" Color="#2EFFFFFF"/>
+                        <SolidColorBrush x:Key="OverlayHighlightBrush" Color="#33FFFFFF"/>
+                        <SolidColorBrush x:Key="OverlayGlyphBrush" Color="#F2FFFFFF"/>
+                        <SolidColorBrush x:Key="OverlayHoverBrush" Color="#14FFFFFF"/>
+                        <SolidColorBrush x:Key="OverlayPressedBrush" Color="#26FFFFFF"/>
+                        <SolidColorBrush x:Key="OverlaySelectedBrush" Color="#26FFFFFF"/>
+                        <SolidColorBrush x:Key="OverlaySelectedBorderBrush" Color="#3DFFFFFF"/>
+                        <SolidColorBrush x:Key="OverlayDividerBrush" Color="#1FFFFFFF"/>
+                        <SolidColorBrush x:Key="OverlayShadowNearBrush" Color="#59000000"/>
+                        <SolidColorBrush x:Key="OverlayShadowFarBrush" Color="#33000000"/>
+                        <SolidColorBrush x:Key="OverlayBlueBrush" Color="#0A84FF"/>
+                        <SolidColorBrush x:Key="OverlayBlueHoverBrush" Color="#3D9BFF"/>
+                        <SolidColorBrush x:Key="OverlayBluePressedBrush" Color="#0070E0"/>
+                        <SolidColorBrush x:Key="OverlayDangerBrush" Color="#FF453A"/>
+                        <SolidColorBrush x:Key="OverlayKeycapBrush" Color="#1FFFFFFF"/>
+                        <SolidColorBrush x:Key="OverlayMutedBrush" Color="#99FFFFFF"/>
+                        <SolidColorBrush x:Key="OverlayPanelBrush" Color="#F018181A"/>
+                    </ResourceDictionary>
+                    <ResourceDictionary x:Key="Light">
+                        <LinearGradientBrush x:Key="OverlayGlassBrush" StartPoint="0,0" EndPoint="0.4,1">
+                            <GradientStop Color="#F5FFFFFF" Offset="0"/>
+                            <GradientStop Color="#F2F1F1F4" Offset="1"/>
+                        </LinearGradientBrush>
+                        <SolidColorBrush x:Key="OverlayGlassBorderBrush" Color="#1F000000"/>
+                        <SolidColorBrush x:Key="OverlayHighlightBrush" Color="#B3FFFFFF"/>
+                        <SolidColorBrush x:Key="OverlayGlyphBrush" Color="#E6000000"/>
+                        <SolidColorBrush x:Key="OverlayHoverBrush" Color="#0F000000"/>
+                        <SolidColorBrush x:Key="OverlayPressedBrush" Color="#1F000000"/>
+                        <SolidColorBrush x:Key="OverlaySelectedBrush" Color="#14000000"/>
+                        <SolidColorBrush x:Key="OverlaySelectedBorderBrush" Color="#22000000"/>
+                        <SolidColorBrush x:Key="OverlayDividerBrush" Color="#14000000"/>
+                        <SolidColorBrush x:Key="OverlayShadowNearBrush" Color="#24000000"/>
+                        <SolidColorBrush x:Key="OverlayShadowFarBrush" Color="#14000000"/>
+                        <SolidColorBrush x:Key="OverlayBlueBrush" Color="#007AFF"/>
+                        <SolidColorBrush x:Key="OverlayBlueHoverBrush" Color="#2B93FF"/>
+                        <SolidColorBrush x:Key="OverlayBluePressedBrush" Color="#0062CC"/>
+                        <SolidColorBrush x:Key="OverlayDangerBrush" Color="#FF3B30"/>
+                        <SolidColorBrush x:Key="OverlayKeycapBrush" Color="#12000000"/>
+                        <SolidColorBrush x:Key="OverlayMutedBrush" Color="#8A000000"/>
+                        <SolidColorBrush x:Key="OverlayPanelBrush" Color="#F2FFFFFF"/>
+                    </ResourceDictionary>
+                </ResourceDictionary.ThemeDictionaries>
+
+                <Style x:Key="ToolGlyph" TargetType="Path">
+                    <Setter Property="Width" Value="17"/>
+                    <Setter Property="Height" Value="17"/>
+                    <Setter Property="Stretch" Value="Uniform"/>
+                    <Setter Property="Stroke" Value="{ThemeResource OverlayGlyphBrush}"/>
+                    <Setter Property="StrokeThickness" Value="1.5"/>
+                    <Setter Property="StrokeStartLineCap" Value="Round"/>
+                    <Setter Property="StrokeEndLineCap" Value="Round"/>
+                    <Setter Property="StrokeLineJoin" Value="Round"/>
+                    <Setter Property="Fill" Value="Transparent"/>
+                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                </Style>
+                <Style x:Key="ToolFill" TargetType="Path" BasedOn="{StaticResource ToolGlyph}">
+                    <Setter Property="Fill" Value="{ThemeResource OverlayGlyphBrush}"/>
+                    <Setter Property="StrokeThickness" Value="0"/>
+                    <Setter Property="Tag" Value="fill"/>
+                </Style>
+
+                <!-- 玻璃胶囊底板 -->
+                <Style x:Key="OverlayCapsule" TargetType="Border">
+                    <Setter Property="Background" Value="{ThemeResource OverlayGlassBrush}"/>
+                    <Setter Property="BorderBrush" Value="{ThemeResource OverlayGlassBorderBrush}"/>
+                    <Setter Property="BorderThickness" Value="1"/>
+                    <Setter Property="CornerRadius" Value="14"/>
+                    <Setter Property="Padding" Value="5,3"/>
+                </Style>
+
+                <!-- 胶囊顶部那道玻璃高光 -->
+                <Style x:Key="GlassHighlight" TargetType="Border">
+                    <Setter Property="Height" Value="1"/>
+                    <Setter Property="Margin" Value="12,0,12,0"/>
+                    <Setter Property="VerticalAlignment" Value="Top"/>
+                    <Setter Property="CornerRadius" Value="1"/>
+                    <Setter Property="Background" Value="{ThemeResource OverlayHighlightBrush}"/>
+                    <Setter Property="IsHitTestVisible" Value="False"/>
+                </Style>
+
+                <!-- 标注工具按钮 -->
+                <Style x:Key="OverlayTool" TargetType="ToggleButton">
+                    <Setter Property="Width" Value="32"/>
+                    <Setter Property="Height" Value="30"/>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Foreground" Value="{ThemeResource OverlayGlyphBrush}"/>
+                    <Setter Property="UseSystemFocusVisuals" Value="False"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Grid>
+                                    <Border x:Name="Plate" Background="{TemplateBinding Background}" CornerRadius="9" BorderThickness="1" BorderBrush="Transparent">
+                                        <Border.BackgroundTransition>
+                                            <BrushTransition Duration="0:0:0.14"/>
+                                        </Border.BackgroundTransition>
+                                    </Border>
+                                    <ContentPresenter x:Name="GlyphHost" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <VisualStateManager.VisualStateGroups>
+                                        <VisualStateGroup x:Name="CommonStates">
+                                            <VisualState x:Name="Normal"/>
+                                            <VisualState x:Name="PointerOver">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Plate.Background" Value="{ThemeResource OverlayHoverBrush}"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Pressed">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Plate.Background" Value="{ThemeResource OverlayPressedBrush}"/>
+                                                    <Setter Target="GlyphHost.Opacity" Value="0.72"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Checked">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Plate.Background" Value="{ThemeResource OverlaySelectedBrush}"/>
+                                                    <Setter Target="Plate.BorderBrush" Value="{ThemeResource OverlaySelectedBorderBrush}"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="CheckedPointerOver">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Plate.Background" Value="{ThemeResource OverlayPressedBrush}"/>
+                                                    <Setter Target="Plate.BorderBrush" Value="{ThemeResource OverlaySelectedBorderBrush}"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="CheckedPressed">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Plate.Background" Value="{ThemeResource OverlayPressedBrush}"/>
+                                                    <Setter Target="Plate.BorderBrush" Value="{ThemeResource OverlaySelectedBorderBrush}"/>
+                                                    <Setter Target="GlyphHost.Opacity" Value="0.72"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Disabled">
+                                                <VisualState.Setters>
+                                                    <Setter Target="GlyphHost.Opacity" Value="0.28"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="CheckedDisabled">
+                                                <VisualState.Setters>
+                                                    <Setter Target="GlyphHost.Opacity" Value="0.28"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                        </VisualStateGroup>
+                                    </VisualStateManager.VisualStateGroups>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+
+                <!-- 扁平操作按钮 -->
+                <Style x:Key="OverlayAction" TargetType="Button">
+                    <Setter Property="Width" Value="32"/>
+                    <Setter Property="Height" Value="30"/>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Foreground" Value="{ThemeResource OverlayGlyphBrush}"/>
+                    <Setter Property="UseSystemFocusVisuals" Value="False"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Grid>
+                                    <Border x:Name="Plate" Background="{TemplateBinding Background}" CornerRadius="9">
+                                        <Border.BackgroundTransition>
+                                            <BrushTransition Duration="0:0:0.14"/>
+                                        </Border.BackgroundTransition>
+                                    </Border>
+                                    <ContentPresenter x:Name="GlyphHost" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <VisualStateManager.VisualStateGroups>
+                                        <VisualStateGroup x:Name="CommonStates">
+                                            <VisualState x:Name="Normal"/>
+                                            <VisualState x:Name="PointerOver">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Plate.Background" Value="{ThemeResource OverlayHoverBrush}"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Pressed">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Plate.Background" Value="{ThemeResource OverlayPressedBrush}"/>
+                                                    <Setter Target="GlyphHost.Opacity" Value="0.72"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Disabled">
+                                                <VisualState.Setters>
+                                                    <Setter Target="GlyphHost.Opacity" Value="0.28"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                        </VisualStateGroup>
+                                    </VisualStateManager.VisualStateGroups>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+
+                <!-- 主行动按钮（苹果系统蓝） -->
+                <Style x:Key="OverlayPrimary" TargetType="Button">
+                    <Setter Property="Height" Value="30"/>
+                    <Setter Property="MinWidth" Value="0"/>
+                    <Setter Property="Padding" Value="11,0,13,0"/>
+                    <Setter Property="Background" Value="{ThemeResource OverlayBlueBrush}"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="CornerRadius" Value="9"/>
+                    <Setter Property="UseSystemFocusVisuals" Value="False"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Grid>
+                                    <Border x:Name="Plate" Background="{TemplateBinding Background}" CornerRadius="{TemplateBinding CornerRadius}">
+                                        <Border.BackgroundTransition>
+                                            <BrushTransition Duration="0:0:0.14"/>
+                                        </Border.BackgroundTransition>
+                                    </Border>
+                                    <ContentPresenter x:Name="GlyphHost" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="{TemplateBinding Padding}"/>
+                                    <VisualStateManager.VisualStateGroups>
+                                        <VisualStateGroup x:Name="CommonStates">
+                                            <VisualState x:Name="Normal"/>
+                                            <VisualState x:Name="PointerOver">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Plate.Background" Value="{ThemeResource OverlayBlueHoverBrush}"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Pressed">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Plate.Background" Value="{ThemeResource OverlayBluePressedBrush}"/>
+                                                    <Setter Target="GlyphHost.Opacity" Value="0.8"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Disabled">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Plate.Opacity" Value="0.35"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                        </VisualStateGroup>
+                                    </VisualStateManager.VisualStateGroups>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+
+                <!-- 提示条键帽 -->
+                <Style x:Key="HintKeycap" TargetType="Border">
+                    <Setter Property="Background" Value="{ThemeResource OverlayKeycapBrush}"/>
+                    <Setter Property="BorderBrush" Value="{ThemeResource OverlayGlassBorderBrush}"/>
+                    <Setter Property="BorderThickness" Value="1"/>
+                    <Setter Property="CornerRadius" Value="5"/>
+                    <Setter Property="Padding" Value="5,0.5"/>
+                    <Setter Property="MinWidth" Value="18"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                </Style>
+                <Style x:Key="HintKeyText" TargetType="TextBlock">
+                    <Setter Property="FontSize" Value="10.5"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="Foreground" Value="{ThemeResource OverlayGlyphBrush}"/>
+                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                </Style>
+                <Style x:Key="HintLabel" TargetType="TextBlock">
+                    <Setter Property="FontSize" Value="12"/>
+                    <Setter Property="Foreground" Value="{ThemeResource OverlayGlyphBrush}"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                </Style>
+                <Style x:Key="HintDot" TargetType="Ellipse">
+                    <Setter Property="Width" Value="2.5"/>
+                    <Setter Property="Height" Value="2.5"/>
+                    <Setter Property="Fill" Value="{ThemeResource OverlayGlyphBrush}"/>
+                    <Setter Property="Opacity" Value="0.35"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                </Style>
+                <Style x:Key="ToolGroupSplit" TargetType="Border">
+                    <Setter Property="Width" Value="1"/>
+                    <Setter Property="Height" Value="16"/>
+                    <Setter Property="CornerRadius" Value="0.5"/>
+                    <Setter Property="Background" Value="{ThemeResource OverlayDividerBrush}"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                    <Setter Property="Margin" Value="5,0"/>
+                </Style>
+            </ResourceDictionary>
+        </Grid.Resources>
+        <Image x:Name="Shot" Stretch="Fill"/>
+        <Border x:Name="FullDim" Background="#59000000" IsHitTestVisible="False"/>
+        <Canvas x:Name="Shade" IsHitTestVisible="False" Visibility="Collapsed">
+            <Border x:Name="DimTop" Background="#59000000"/>
+            <Border x:Name="DimLeft" Background="#59000000"/>
+            <Border x:Name="DimRight" Background="#59000000"/>
+            <Border x:Name="DimBottom" Background="#59000000"/>
+            <Border x:Name="Box" BorderBrush="{ThemeResource OverlayBlueBrush}" BorderThickness="2"/>
+            <Border x:Name="SizeHost" Background="{ThemeResource OverlayPanelBrush}" BorderBrush="{ThemeResource OverlayGlassBorderBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="8,3,9,3" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                    <Path Width="10" Height="10" Stretch="None" Stroke="{ThemeResource OverlayBlueBrush}" StrokeThickness="1.4"
+                          StrokeLineJoin="Round" VerticalAlignment="Center"
+                          Data="M 2.2,5.6 V 3.2 A 1,1 0 0 1 3.2,2.2 H 5.6 M 6.4,2.2 H 8.8 A 1,1 0 0 1 9.8,3.2 V 5.6 M 9.8,6.4 V 8.8 A 1,1 0 0 1 8.8,9.8 H 6.4 M 5.6,9.8 H 3.2 A 1,1 0 0 1 2.2,8.8 V 6.4"/>
+                    <TextBlock x:Name="SizeLabel" Foreground="{ThemeResource OverlayGlyphBrush}" FontSize="11.5" FontFamily="Consolas, Segoe UI" FontWeight="SemiBold"/>
+                </StackPanel>
+            </Border>
+        </Canvas>
+        <Canvas x:Name="Ink" IsHitTestVisible="False" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+        <Canvas x:Name="TempInk" IsHitTestVisible="False" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+
+        <!-- 首屏快捷操作提示（键帽样式） -->
+        <Border x:Name="Hint" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0"
+                Background="{ThemeResource OverlayGlassBrush}"
+                BorderBrush="{ThemeResource OverlayGlassBorderBrush}" BorderThickness="1"
+                CornerRadius="18" Padding="14,6" IsHitTestVisible="False">
+            <Grid>
+                <Border Style="{StaticResource GlassHighlight}" Margin="16,0,16,0"/>
+                <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                    <StackPanel x:Name="HintTips" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                        <TextBlock Text="拖拽框选" Style="{StaticResource HintLabel}"/>
+                        <Ellipse Style="{StaticResource HintDot}"/>
+                        <Border Style="{StaticResource HintKeycap}">
+                            <TextBlock Text="单击" Style="{StaticResource HintKeyText}"/>
+                        </Border>
+                        <TextBlock Text="选窗口" Style="{StaticResource HintLabel}"/>
+                        <Ellipse Style="{StaticResource HintDot}"/>
+                        <Border Style="{StaticResource HintKeycap}">
+                            <TextBlock Text="C" Style="{StaticResource HintKeyText}"/>
+                        </Border>
+                        <TextBlock Text="取色" Style="{StaticResource HintLabel}"/>
+                        <Ellipse Style="{StaticResource HintDot}"/>
+                        <Border Style="{StaticResource HintKeycap}">
+                            <TextBlock Text="滚轮" Style="{StaticResource HintKeyText}"/>
+                        </Border>
+                        <TextBlock Text="层级" Style="{StaticResource HintLabel}"/>
+                        <Ellipse Style="{StaticResource HintDot}"/>
+                        <Border Style="{StaticResource HintKeycap}">
+                            <TextBlock Text="双击" Style="{StaticResource HintKeyText}"/>
+                        </Border>
+                        <TextBlock Text="完成" Style="{StaticResource HintLabel}"/>
+                    </StackPanel>
+                    <StackPanel x:Name="HintMessage" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center" Visibility="Collapsed">
+                        <Ellipse Width="6" Height="6" Fill="{ThemeResource OverlayBlueBrush}" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="HintText" Foreground="{ThemeResource OverlayGlyphBrush}" FontSize="12.5" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Canvas x:Name="Ui">
+            <!-- 放大镜/取色器 -->
+            <Border x:Name="Loupe" Visibility="Collapsed" IsHitTestVisible="False" Width="154">
+                <Grid>
+                    <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,7,0,-7"/>
+                    <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
+                    <Border Background="{ThemeResource OverlayGlassBrush}" BorderBrush="{ThemeResource OverlayGlassBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="7,7,7,6">
+                        <Grid>
+                            <Border Style="{StaticResource GlassHighlight}" Margin="10,0,10,0"/>
+                            <StackPanel Spacing="4">
+                                <Grid Width="138" Height="138">
+                                    <Image x:Name="LoupeImage" Stretch="Fill"/>
+                                    <!-- 十字准星（黑白双层高对比） -->
+                                    <Rectangle Width="3" Fill="#44000000" HorizontalAlignment="Center" IsHitTestVisible="False"/>
+                                    <Rectangle Height="3" Fill="#44000000" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                    <Rectangle Width="1" Fill="#FFFFFFFF" HorizontalAlignment="Center" IsHitTestVisible="False"/>
+                                    <Rectangle Height="1" Fill="#FFFFFFFF" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                    <Border Width="6" Height="6" BorderBrush="{ThemeResource OverlayBlueBrush}" BorderThickness="1.5"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                    <Rectangle Width="138" Height="138" IsHitTestVisible="False">
+                                        <Rectangle.Stroke>
+                                            <SolidColorBrush Color="#18000000"/>
+                                        </Rectangle.Stroke>
+                                        <Rectangle.StrokeThickness>1</Rectangle.StrokeThickness>
+                                    </Rectangle>
+                                    <Border HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,5,5"
+                                            Background="#8C000000" CornerRadius="4" Padding="4,0.5" IsHitTestVisible="False">
+                                        <TextBlock Text="4×" FontSize="9" Foreground="#FFFFFF" FontFamily="Consolas"/>
+                                    </Border>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*,Auto" Margin="2,2,2,0" VerticalAlignment="Center">
+                                    <Border x:Name="LoupeColorBlock" Width="12" Height="12" CornerRadius="3"
+                                            BorderBrush="#33000000" BorderThickness="1" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                    <TextBlock x:Name="LoupeLabel" Grid.Column="1" VerticalAlignment="Center"
+                                               Foreground="{ThemeResource OverlayGlyphBrush}" FontSize="12" FontFamily="Consolas" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="LoupePosLabel" Grid.Column="2" VerticalAlignment="Center"
+                                               Foreground="{ThemeResource OverlayMutedBrush}" FontSize="10" FontFamily="Consolas"/>
+                                </Grid>
+                                <TextBlock Text="C 复制 HEX  ·  Shift+C RGB" HorizontalAlignment="Center"
+                                           Foreground="{ThemeResource OverlayMutedBrush}" FontSize="9"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- 条码/二维码智能识别浮动卡片 -->
+            <Border x:Name="BarcodeCard" Visibility="Collapsed" Canvas.Left="0" Canvas.Top="0">
+                <Grid>
+                    <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="12" Margin="0,6,0,-6"/>
+                    <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="12" Margin="0,2,0,-2"/>
+                    <Border Background="{ThemeResource OverlayGlassBrush}" BorderBrush="{ThemeResource OverlayGlassBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="9,5,7,5">
+                        <Grid>
+                            <Border Style="{StaticResource GlassHighlight}" Margin="10,0,10,0"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <Border Width="24" Height="24" CornerRadius="7" Background="{ThemeResource OverlayBlueBrush}" VerticalAlignment="Center">
+                                    <Path Width="12" Height="12" Stretch="None" Stroke="White" StrokeThickness="1.5" StrokeLineJoin="Round"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Data="M 1.5,4 V 2.5 A 1,1 0 0 1 2.5,1.5 H 4 M 8,1.5 H 9.5 A 1,1 0 0 1 10.5,2.5 V 4 M 10.5,8 V 9.5 A 1,1 0 0 1 9.5,10.5 H 8 M 4,10.5 H 2.5 A 1,1 0 0 1 1.5,9.5 V 8 M 4,4 H 8 V 8 H 4 Z"/>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" Spacing="1">
+                                    <TextBlock x:Name="BarcodeFormatText" Text="二维码 (QR_CODE)" FontSize="10" Foreground="{ThemeResource OverlayMutedBrush}"/>
+                                    <TextBlock x:Name="BarcodeContentText" Text="" FontSize="12.5" FontWeight="SemiBold" Foreground="{ThemeResource OverlayGlyphBrush}" MaxWidth="280" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <Button x:Name="BarcodeCopyBtn" Style="{StaticResource OverlayAction}" Width="44" Height="26" Click="OnBarcodeCopy" ToolTipService.ToolTip="复制条码内容">
+                                    <TextBlock Text="复制" FontSize="11.5" Foreground="{ThemeResource OverlayBlueBrush}" FontWeight="SemiBold"/>
+                                </Button>
+                                <Button x:Name="BarcodeOpenBtn" Style="{StaticResource OverlayAction}" Width="44" Height="26" Click="OnBarcodeOpen" ToolTipService.ToolTip="在浏览器中打开网址">
+                                    <TextBlock Text="打开" FontSize="11.5" Foreground="{ThemeResource OverlayBlueBrush}" FontWeight="SemiBold"/>
+                                </Button>
+                                <Button Style="{StaticResource OverlayAction}" Width="24" Height="24" Click="OnBarcodeDismiss" ToolTipService.ToolTip="关闭此条码提示">
+                                    <Path Style="{StaticResource ToolGlyph}" Width="10" Height="10" Stroke="{ThemeResource OverlayMutedBrush}" StrokeThickness="1.5" Data="M 2,2 L 8,8 M 8,2 L 2,8"/>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- 核心三段式自适应悬浮工具栏 -->
+            <StackPanel x:Name="Toolbar" Orientation="Vertical" Visibility="Collapsed">
+                <Border x:Name="MainBar" HorizontalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <!-- 第一段：基础标注工具 -->
+                        <Grid>
+                            <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,8,0,-8"/>
+                            <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
+                            <Border Style="{StaticResource OverlayCapsule}">
+                                <Grid>
+                                    <Border Style="{StaticResource GlassHighlight}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
+                                        <ToggleButton x:Name="RectButton" Style="{StaticResource OverlayTool}" Click="OnRect" ToolTipService.ToolTip="矩形  R">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 4,2.5 H 14 A 2,2 0 0 1 16,4.5 V 13.5 A 2,2 0 0 1 14,15.5 H 4 A 2,2 0 0 1 2,13.5 V 4.5 A 2,2 0 0 1 4,2.5 Z"/>
+                                        </ToggleButton>
+                                        <ToggleButton x:Name="EllipseButton" Style="{StaticResource OverlayTool}" Click="OnEllipse" ToolTipService.ToolTip="圆形  E">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 9,2.5 A 6.5,6.5 0 1 1 8.99,2.5 Z"/>
+                                        </ToggleButton>
+                                        <ToggleButton x:Name="EmojiButton" Style="{StaticResource OverlayTool}" Click="OnEmoji" ToolTipService.ToolTip="表情贴图">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 9,2.5 A 6.5,6.5 0 1 1 8.99,2.5 Z M 6.5,6.8 A 0.7,0.7 0 1 1 6.5,6.79 Z M 11.5,6.8 A 0.7,0.7 0 1 1 11.5,6.79 Z M 5.8,10 H 12.2 C 12.2,13.5 5.8,13.5 5.8,10 Z"/>
+                                        </ToggleButton>
+                                        <ToggleButton x:Name="ArrowButton" Style="{StaticResource OverlayTool}" Click="OnArrow" ToolTipService.ToolTip="箭头  A">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 4.2,13.8 L 13.5,4.5 M 8,4.5 H 13.5 V 10"/>
+                                        </ToggleButton>
+                                        <ToggleButton x:Name="PenButton" Style="{StaticResource OverlayTool}" Click="OnPen" ToolTipService.ToolTip="画笔  P">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 3.2,14.8 L 6.8,14.2 L 14.2,6.8 A 1.4,1.4 0 0 0 14.2,4.8 L 13.2,3.8 A 1.4,1.4 0 0 0 11.2,3.8 L 3.8,11.2 Z M 10.5,4.5 L 13.5,7.5 M 5.5,12.5 L 3.2,14.8"/>
+                                        </ToggleButton>
+                                        <ToggleButton x:Name="HighlighterButton" Style="{StaticResource OverlayTool}" Click="OnHighlighter" ToolTipService.ToolTip="荧光笔  H">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 4,14 L 6,15.5 L 13.5,6.5 A 1.4,1.4 0 0 0 13.5,4.5 L 12.5,3.5 A 1.4,1.4 0 0 0 10.5,3.5 L 3,12.5 Z M 9.5,4.5 L 12.5,7.5 M 4,14 L 2.5,16 L 6,15.5"/>
+                                        </ToggleButton>
+                                        <ToggleButton x:Name="SpotlightButton" Style="{StaticResource OverlayTool}" Click="OnSpotlight" ToolTipService.ToolTip="聚光灯  S">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 9,2.5 A 6.5,6.5 0 1 1 8.99,2.5 Z M 9,6 A 3,3 0 1 0 9.01,6 Z"/>
+                                        </ToggleButton>
+                                        <ToggleButton x:Name="MosaicButton" Style="{StaticResource OverlayTool}" Click="OnMosaic" ToolTipService.ToolTip="马赛克  M">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 3.5,2.5 H 14.5 A 2,2 0 0 1 16.5,4.5 V 13.5 A 2,2 0 0 1 14.5,15.5 H 3.5 A 2,2 0 0 1 1.5,13.5 V 4.5 A 2,2 0 0 1 3.5,2.5 Z M 5.2,5.2 H 7.8 V 7.8 H 5.2 Z M 10.2,5.2 H 12.8 V 7.8 H 10.2 Z M 7.8,7.8 H 10.2 V 10.2 H 7.8 Z M 5.2,10.2 H 7.8 V 12.8 H 5.2 Z M 10.2,10.2 H 12.8 V 12.8 H 10.2 Z"/>
+                                        </ToggleButton>
+                                        <ToggleButton x:Name="TextButton" Style="{StaticResource OverlayTool}" Click="OnText" ToolTipService.ToolTip="文字  T">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 3.5,2.5 H 14.5 A 2,2 0 0 1 16.5,4.5 V 13.5 A 2,2 0 0 1 14.5,15.5 H 3.5 A 2,2 0 0 1 1.5,13.5 V 4.5 A 2,2 0 0 1 3.5,2.5 Z M 5.5,6 H 12.5 M 9,6 V 12.5"/>
+                                        </ToggleButton>
+                                        <!-- 隐藏的序号按钮，保留兼容性 -->
+                                        <ToggleButton x:Name="NumberButton" Visibility="Collapsed" Style="{StaticResource OverlayTool}" Click="OnNumber"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- 第二段：智能与扩展工具 -->
+                        <Grid>
+                            <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,8,0,-8"/>
+                            <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
+                            <Border Style="{StaticResource OverlayCapsule}">
+                                <Grid>
+                                    <Border Style="{StaticResource GlassHighlight}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
+                                        <StackPanel x:Name="SmartGroup" Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
+                                            <Button x:Name="TranslateButton" Style="{StaticResource OverlayAction}" Click="OnTranslate" ToolTipService.ToolTip="翻译选中区域">
+                                                <Path Style="{StaticResource ToolGlyph}" Data="M 8.5,2.5 H 14.5 A 1.5,1.5 0 0 1 16,4 V 9.5 A 1.5,1.5 0 0 1 14.5,11 H 12 M 10.5,9.5 L 12.5,5 L 14.5,9.5 M 11.2,8.2 H 13.8 M 3.5,6 H 9.5 A 1.5,1.5 0 0 1 11,7.5 V 13.5 A 1.5,1.5 0 0 1 9.5,15 H 3.5 A 1.5,1.5 0 0 1 2,13.5 V 7.5 A 1.5,1.5 0 0 1 3.5,6 Z M 4,8.5 H 9 M 6.5,7.2 V 8.5 M 4.8,10.2 L 8.2,13.8 M 8.2,10.2 L 4.8,13.8"/>
+                                            </Button>
+                                            <Button x:Name="ExtractTextButton" Style="{StaticResource OverlayAction}" Click="OnExtractText" ToolTipService.ToolTip="提取文字 (OCR)">
+                                                <Path Style="{StaticResource ToolGlyph}" Data="M 2.5,6.5 V 4 A 1.5,1.5 0 0 1 4,2.5 H 6.5 M 11.5,2.5 H 14 A 1.5,1.5 0 0 1 15.5,4 V 6.5 M 2.5,11.5 V 14 A 1.5,1.5 0 0 1 4,15.5 H 6.5 M 11.5,15.5 H 14 A 1.5,1.5 0 0 1 15.5,14 V 11.5 M 5.5,7.5 H 12.5 M 9,6 V 7.5 M 6.5,9.2 L 11.5,14 M 11.5,9.2 L 6.5,14"/>
+                                            </Button>
+                                            <Button x:Name="ExtractCodeButton" Style="{StaticResource OverlayAction}" Click="OnExtractCode" ToolTipService.ToolTip="提取代码（自动识别语法并导出 Markdown）">
+                                                <Path Style="{StaticResource ToolGlyph}" Data="M 6.5,5.5 L 3.5,9 L 6.5,12.5 M 11.5,5.5 L 14.5,9 L 11.5,12.5 M 10,4 L 8,14"/>
+                                            </Button>
+                                            <Button x:Name="SmartRedactButton" Style="{StaticResource OverlayAction}" Click="OnSmartRedact" ToolTipService.ToolTip="智能隐私脱敏（手机号 / 身份证 / 邮箱 / IP / 密钥）">
+                                                <Path Style="{StaticResource ToolGlyph}" Data="M 9,2.5 L 14.5,4.8 V 9.5 C 14.5,12.8 11.8,15.3 9,16 C 6.2,15.3 3.5,12.8 3.5,9.5 V 4.8 Z M 7.5,9.2 L 8.8,10.5 L 11.5,7.8"/>
+                                            </Button>
+                                            <Button x:Name="AiVisionButton" Style="{StaticResource OverlayAction}" Click="OnAiVision" ToolTipService.ToolTip="AI 视觉分析（多模态大模型解析与问答）">
+                                                <Path Style="{StaticResource ToolGlyph}" Data="M 9,2 L 10.2,6.8 L 15,8 L 10.2,9.2 L 9,14 L 7.8,9.2 L 3,8 L 7.8,6.8 Z M 13.8,11.8 L 14.3,13.2 L 15.8,13.8 L 14.3,14.3 L 13.8,15.8 L 13.2,14.3 L 11.8,13.8 L 13.2,13.2 Z"/>
+                                            </Button>
+                                            <Button x:Name="LongButton" Style="{StaticResource OverlayAction}" Click="OnLong" ToolTipService.ToolTip="滚动长截图">
+                                                <Path Style="{StaticResource ToolGlyph}" Data="M 4,6.5 V 4 A 1.5,1.5 0 0 1 5.5,2.5 H 12.5 A 1.5,1.5 0 0 1 14,4 V 6.5 M 4,8.5 V 9.5 M 14,8.5 V 9.5 M 4,11.5 V 14 A 1.5,1.5 0 0 0 5.5,15.5 H 12.5 A 1.5,1.5 0 0 0 14,14 V 11.5 M 9,5.5 V 12.5 M 6.8,7.5 L 9,5.2 L 11.2,7.5 M 6.8,10.5 L 9,12.8 L 11.2,10.5"/>
+                                            </Button>
+                                        </StackPanel>
+                                        <!-- 紧凑模式下的智能工具聚合入口 -->
+                                        <Button x:Name="MoreToolsButton" Style="{StaticResource OverlayAction}" Visibility="Collapsed" ToolTipService.ToolTip="更多智能工具">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 4,9 A 1.2,1.2 0 1 1 3.99,9 Z M 9,9 A 1.2,1.2 0 1 1 8.99,9 Z M 14,9 A 1.2,1.2 0 1 1 13.99,9 Z"/>
+                                            <Button.Flyout>
+                                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                                    <MenuFlyoutItem Text="长截图" Click="OnLong">
+                                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7EE;"/></MenuFlyoutItem.Icon>
+                                                    </MenuFlyoutItem>
+                                                    <MenuFlyoutItem Text="提取文字 (OCR)" Click="OnExtractText">
+                                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C1;"/></MenuFlyoutItem.Icon>
+                                                    </MenuFlyoutItem>
+                                                    <MenuFlyoutItem Text="提取代码 (Markdown)" Click="OnExtractCode">
+                                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE943;"/></MenuFlyoutItem.Icon>
+                                                    </MenuFlyoutItem>
+                                                    <MenuFlyoutItem Text="智能隐私脱敏" Click="OnSmartRedact">
+                                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72E;"/></MenuFlyoutItem.Icon>
+                                                    </MenuFlyoutItem>
+                                                    <MenuFlyoutItem Text="AI 视觉分析" Click="OnAiVision">
+                                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE946;"/></MenuFlyoutItem.Icon>
+                                                    </MenuFlyoutItem>
+                                                    <MenuFlyoutItem Text="翻译" Click="OnTranslate">
+                                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE774;"/></MenuFlyoutItem.Icon>
+                                                    </MenuFlyoutItem>
+                                                </MenuFlyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- 第三段：编辑与导出操作 -->
+                        <Grid>
+                            <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,8,0,-8"/>
+                            <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
+                            <Border Style="{StaticResource OverlayCapsule}">
+                                <Grid>
+                                    <Border Style="{StaticResource GlassHighlight}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
+                                        <Button x:Name="UndoButton" Style="{StaticResource OverlayAction}" Click="OnUndo" ToolTipService.ToolTip="撤销  Ctrl+Z">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 9.5,4 L 6.5,6.8 L 9.5,9.6 M 7.5,6.8 H 11 A 3.8,3.8 0 0 1 14.8,10.6 A 3.8,3.8 0 0 1 11,14.4 H 5"/>
+                                        </Button>
+                                        <!-- 隐藏的重做按钮，保留快捷键兼容性 -->
+                                        <Button x:Name="RedoButton" Visibility="Collapsed" Style="{StaticResource OverlayAction}" Click="OnRedo"/>
+
+                                        <Border Style="{StaticResource ToolGroupSplit}"/>
+
+                                        <Button x:Name="SaveButton" Style="{StaticResource OverlayAction}" Click="OnSaveAs" ToolTipService.ToolTip="保存到本地  Ctrl+S">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 3.5,8.5 V 13.5 A 1.5,1.5 0 0 0 5,15 H 13 A 1.5,1.5 0 0 0 14.5,13.5 V 8.5 M 9,3 V 11.5 M 5.8,8.2 L 9,11.5 L 12.2,8.2"/>
+                                        </Button>
+                                        <Button x:Name="PinButton" Style="{StaticResource OverlayAction}" Click="OnPin" ToolTipService.ToolTip="钉在桌面置顶">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 7,3.5 H 11 M 8,3.5 L 8.2,5.5 L 4.8,11.5 H 13.2 L 9.8,5.5 L 10,3.5 M 9,11.5 V 16"/>
+                                        </Button>
+                                        <Button x:Name="ShareButton" Style="{StaticResource OverlayAction}" Click="OnShare" ToolTipService.ToolTip="发送 / 分享">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 4.5,14 C 4.5,9.5 8,6.5 13,6.5 M 9.5,3 L 14,6.5 L 9.5,10"/>
+                                        </Button>
+                                        <Button x:Name="CancelButton" Style="{StaticResource OverlayAction}" Click="OnCancel" ToolTipService.ToolTip="取消  Esc">
+                                            <Path Style="{StaticResource ToolGlyph}" Tag="fixed" Stroke="{ThemeResource OverlayDangerBrush}" StrokeThickness="1.7" Data="M 4.5,4.5 L 13.5,13.5 M 13.5,4.5 L 4.5,13.5"/>
+                                        </Button>
+
+                                        <Border Style="{StaticResource ToolGroupSplit}"/>
+
+                                        <Button x:Name="ConfirmButton" Style="{StaticResource OverlayPrimary}" Click="OnConfirm" ToolTipService.ToolTip="完成并复制  Enter">
+                                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                                <Path Style="{StaticResource ToolGlyph}" Tag="fixed" Width="12" Height="12" Stroke="White" StrokeThickness="2.1" Data="M 3.8,9.2 L 7.5,13.2 L 14.5,4.8"/>
+                                                <TextBlock Text="完成" Foreground="White" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 二级标注参数微调条 -->
+                <Border x:Name="StyleBar" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,7,0,0">
+                    <Grid>
+                        <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,8,0,-8"/>
+                        <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
+                        <Border Style="{StaticResource OverlayCapsule}" Padding="5,3">
+                            <Grid>
+                                <Border Style="{StaticResource GlassHighlight}"/>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <StackPanel x:Name="WidthRow" Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
+                                        <Button x:Name="ThinButton" Style="{StaticResource OverlayAction}" Width="28" Click="OnStrokeWidth" Tag="2" ToolTipService.ToolTip="细描边">
+                                            <Ellipse Width="4" Height="4"/>
+                                        </Button>
+                                        <Button x:Name="MidButton" Style="{StaticResource OverlayAction}" Width="28" Click="OnStrokeWidth" Tag="3" ToolTipService.ToolTip="中等描边">
+                                            <Ellipse Width="7" Height="7"/>
+                                        </Button>
+                                        <Button x:Name="ThickButton" Style="{StaticResource OverlayAction}" Width="28" Click="OnStrokeWidth" Tag="6" ToolTipService.ToolTip="粗描边">
+                                            <Ellipse Width="10" Height="10"/>
+                                        </Button>
+                                    </StackPanel>
+                                    <StackPanel x:Name="FontRow" Orientation="Horizontal" Spacing="1" VerticalAlignment="Center" Visibility="Collapsed">
+                                        <Button x:Name="SmallFontButton" Style="{StaticResource OverlayAction}" Width="28" Click="OnFontSize" Tag="14" ToolTipService.ToolTip="小号文字">
+                                            <TextBlock Text="小" FontSize="13"/>
+                                        </Button>
+                                        <Button x:Name="MidFontButton" Style="{StaticResource OverlayAction}" Width="28" Click="OnFontSize" Tag="20" ToolTipService.ToolTip="中号文字">
+                                            <TextBlock Text="中" FontSize="13"/>
+                                        </Button>
+                                        <Button x:Name="LargeFontButton" Style="{StaticResource OverlayAction}" Width="28" Click="OnFontSize" Tag="28" ToolTipService.ToolTip="大号文字">
+                                            <TextBlock Text="大" FontSize="13"/>
+                                        </Button>
+                                    </StackPanel>
+                                    <StackPanel x:Name="EmojiRow" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
+                                        <Button Style="{StaticResource OverlayAction}" Width="30" Height="30" Click="OnSelectEmoji" Tag="😊" ToolTipService.ToolTip="微笑">
+                                            <TextBlock Text="😊" FontSize="16" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Style="{StaticResource OverlayAction}" Width="30" Height="30" Click="OnSelectEmoji" Tag="😂" ToolTipService.ToolTip="笑哭">
+                                            <TextBlock Text="😂" FontSize="16" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Style="{StaticResource OverlayAction}" Width="30" Height="30" Click="OnSelectEmoji" Tag="👍" ToolTipService.ToolTip="赞">
+                                            <TextBlock Text="👍" FontSize="16" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Style="{StaticResource OverlayAction}" Width="30" Height="30" Click="OnSelectEmoji" Tag="❤️" ToolTipService.ToolTip="爱心">
+                                            <TextBlock Text="❤️" FontSize="16" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Style="{StaticResource OverlayAction}" Width="30" Height="30" Click="OnSelectEmoji" Tag="🎉" ToolTipService.ToolTip="庆祝">
+                                            <TextBlock Text="🎉" FontSize="16" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Style="{StaticResource OverlayAction}" Width="30" Height="30" Click="OnSelectEmoji" Tag="🔥" ToolTipService.ToolTip="火">
+                                            <TextBlock Text="🔥" FontSize="16" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Style="{StaticResource OverlayAction}" Width="30" Height="30" Click="OnSelectEmoji" Tag="⭐" ToolTipService.ToolTip="星">
+                                            <TextBlock Text="⭐" FontSize="16" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Style="{StaticResource OverlayAction}" Width="30" Height="30" Click="OnSelectEmoji" Tag="❓" ToolTipService.ToolTip="疑问">
+                                            <TextBlock Text="❓" FontSize="16" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Style="{StaticResource OverlayAction}" Width="30" Height="30" Click="OnSelectEmoji" Tag="❗" ToolTipService.ToolTip="感叹">
+                                            <TextBlock Text="❗" FontSize="16" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Style="{StaticResource OverlayAction}" Width="30" Height="30" Click="OnSelectEmoji" Tag="✔️" ToolTipService.ToolTip="正确">
+                                            <TextBlock Text="✔️" FontSize="16" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button Style="{StaticResource OverlayAction}" Width="30" Height="30" Click="OnSelectEmoji" Tag="❌" ToolTipService.ToolTip="错误">
+                                            <TextBlock Text="❌" FontSize="16" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Button>
+                                    </StackPanel>
+                                    <Border x:Name="StyleSplit" Style="{StaticResource ToolGroupSplit}"/>
+                                    <StackPanel x:Name="ColorRow" Orientation="Horizontal" VerticalAlignment="Center"/>
+                                    <Button x:Name="OneClickButton" Style="{StaticResource OverlayAction}" Width="94" Visibility="Collapsed" Click="OnOneClickMosaic" ToolTipService.ToolTip="把整块选区打码">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <Path Style="{StaticResource ToolGlyph}" Width="14" Height="14" Data="M 3.5,2.5 H 14.5 A 2,2 0 0 1 16.5,4.5 V 13.5 A 2,2 0 0 1 14.5,15.5 H 3.5 A 2,2 0 0 1 1.5,13.5 V 4.5 A 2,2 0 0 1 3.5,2.5 Z M 5,5 H 8 V 8 H 5 Z M 10,5 H 13 V 8 H 10 Z M 7.5,7.5 H 10.5 V 10.5 H 7.5 Z M 5,10 H 8 V 13 H 5 Z M 10,10 H 13 V 13 H 10 Z"/>
+                                            <TextBlock Text="一键打码" FontSize="12" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </Canvas>
+    </Grid>
+</Window>

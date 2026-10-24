@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>Jietu</RootNamespace>
+    <AssemblyName>SnapFlow</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64</Platforms>
+    <!-- 固定 RID：保证 dotnet build 与 build.ps1 的发布输出始终落在同一个 win-x64 目录，
+         避免出现两套不同路径的产物 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Platform Condition="'$(Platform)' == 'AnyCPU' Or '$(Platform)' == ''">x64</Platform>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <WindowsSdkPackageVersion>10.0.26100.57</WindowsSdkPackageVersion>
+    <Product>SnapFlow 瞬流</Product>
+    <Title>SnapFlow (瞬流)</Title>
+    <Description>轻量、现代且高效率的 Windows 智能截图、贴图与剪贴板工作流增强工具</Description>
+    <Company>SnapFlow</Company>
+    <Authors>SnapFlow</Authors>
+    <Copyright>Copyright © 2026 SnapFlow. All rights reserved.</Copyright>
+    <NeutralLanguage>zh-CN</NeutralLanguage>
+    <!-- 版本唯一来源：-p:Version 可覆盖。不要添加 AssemblyVersion/FileVersion，
+         显式设置会优先于 -p:Version，导致升版时 Win32 文件版本不更新 -->
+    <Version>1.1.3</Version>
+    <ApplicationIcon>Assets\App.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="Assets\App.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.3.9" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.3.12" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.5.1" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <PackageReference Include="ZXing.Net" Version="0.16.10" />
+  </ItemGroup>
+</Project>
