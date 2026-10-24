@@ -1,8 +1,13 @@
 ﻿$ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-# 缓存目录固定在仓库根目录（脚本位于 scripts/ 下）
+# 缓存目录固定在仓库根目录（脚本位于 scripts/ 下）。
+# 必须显式创建：目录被 .gitignore 排除，全新检出（如 CI）上不存在，
+# 大文件分块路径的 File.Open 会直接抛 DirectoryNotFoundException。
 $root = Split-Path -Parent $PSScriptRoot
 $dest = Join-Path $root '.nupkg-cache'
+if (-not (Test-Path -LiteralPath $dest)) {
+    New-Item -ItemType Directory -Path $dest -Force | Out-Null
+}
 
 # ==============================================================================
 # 完整性校验清单（SHA-256，小写十六进制）
