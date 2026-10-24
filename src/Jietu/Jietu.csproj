@@ -29,7 +29,7 @@
     <NeutralLanguage>zh-CN</NeutralLanguage>
     <!-- 版本唯一来源：-p:Version 可覆盖。不要添加 AssemblyVersion/FileVersion，
          显式设置会优先于 -p:Version，导致升版时 Win32 文件版本不更新 -->
-    <Version>1.1.3</Version>
+    <Version>1.1.4</Version>
     <ApplicationIcon>Assets\App.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
