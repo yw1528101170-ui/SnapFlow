@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        :root { color-scheme: light dark; }
+        body { width: 320px; margin: 0; font: 12.5px/1.5 system-ui, sans-serif; padding: 10px; }
+        header { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-weight: 600; }
+        #dot { width: 8px; height: 8px; border-radius: 50%; background: #98a2b3; }
+        #dot.ok { background: #22c55e; } #dot.warn { background: #f59e0b; } #dot.err { background: #ef4444; }
+        .entry { display: flex; align-items: center; justify-content: space-between; gap: 6px;
+                 padding: 7px 9px; border-radius: 7px; cursor: pointer; }
+        .entry:hover { background: rgba(127,127,127,.15); }
+        .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sub { color: #888; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .fill-btn { flex: none; border: 0; border-radius: 6px; padding: 4px 10px; cursor: pointer;
+                    background: #2d6efa; color: #fff; font-size: 11.5px; }
+        .hint { color: #888; padding: 6px 2px; }
+        .hint code { font-size: 11px; }
+        .gen { display: flex; gap: 6px; margin-top: 8px; }
+        .gen input { flex: 1; font-family: monospace; font-size: 11px; padding: 3px 6px; }
+        .gen button, .gen select { border: 0; border-radius: 6px; padding: 4px 9px; cursor: pointer;
+                                  background: rgba(127,127,127,.2); }
+        .empty { padding: 14px 2px; color: #888; text-align: center; }
+    </style>
+</head>
+<body>
+    <header><span id="dot"></span><span>SnapFlow 密码库</span><span id="status" style="font-weight:400;color:#888"></span></header>
+    <div id="list" class="empty">读取中…</div>
+    <div class="gen">
+        <select id="genKind">
+            <option value="random">随机密码 16 位</option>
+            <option value="phrase">密码短语 4 词</option>
+        </select>
+        <input id="genOut" readonly placeholder="生成…">
+        <button id="genBtn">生成</button>
+        <button id="genCopy">复制</button>
+    </div>
+    <div id="hint" class="hint" hidden></div>
+    <script src="popup.js"></script>
+</body>
+</html>

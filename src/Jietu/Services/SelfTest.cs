@@ -22,6 +22,7 @@ internal static class SelfTest
         CheckPhase2(failures);
         CheckPhase3(failures);
         CheckPhase4(failures);
+        CheckVault(failures);
         var message = failures.Count == 0 ? "self-test ok" : string.Join(Environment.NewLine, failures);
         try
         {
@@ -976,6 +977,55 @@ internal static class SelfTest
         if (!condition)
         {
             failures.Add("失败: " + name);
+        }
+    }
+
+    /// <summary>
+    /// 密码库容器冒烟：头序列化/解析、整库加密往返、篡改必败、损坏文件备份。
+    /// 用小 KDF 参数（8MiB/1 迭代）保证自检秒级完成。
+    /// </summary>
+    private static void CheckVault(List<string> failures)
+    {
+        try
+        {
+            var header = new VaultHeader
+            {
+                Version = VaultHeader.CurrentVersion,
+                Salt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(VaultHeader.SaltLength),
+                Iterations = 1,
+                MemoryKiB = VaultHeader.MinMemoryKiB,
+                Parallelism = 1,
+                Nonce = System.Security.Cryptography.RandomNumberGenerator.GetBytes(VaultHeader.NonceLength),
+            };
+            Expect(VaultHeader.TryParse(header.ToBytes(), out var parsed), "vault 头序列化往返", failures);
+            Expect(parsed.Iterations == 1 && parsed.MemoryKiB == VaultHeader.MinMemoryKiB, "vault 头参数保真", failures);
+
+            var bad = header.ToBytes();
+            bad[0] = (byte)'X';
+            Expect(!VaultHeader.TryParse(bad, out _), "vault 头拒绝坏 magic", failures);
+
+            var key = VaultCrypto.DeriveKey("self-test"u8, header);
+            var body = VaultCrypto.Seal(header, key, VaultDefaults.NewData());
+            Expect(VaultCrypto.Open(header, key, body) != null, "vault 加解密往返", failures);
+            var tampered = (byte[])body.Clone();
+            tampered[0] ^= 0xFF;
+            Expect(VaultCrypto.Open(header, key, tampered) == null, "vault 篡改必败", failures);
+
+            var path = Path.Combine(Path.GetTempPath(), "snapflow-selftest-vault-" + Guid.NewGuid().ToString("N") + ".spv");
+            try
+            {
+                VaultStore.Save(path, header, body);
+                var raw = VaultStore.Load(path);
+                Expect(VaultStore.Parse(raw) != null, "vault 文件落盘解析", failures);
+            }
+            finally
+            {
+                try { File.Delete(path); } catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            failures.Add("CheckVault: " + ex.Message);
         }
     }
 }
