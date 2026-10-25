@@ -46,6 +46,19 @@
                     <SolidColorBrush x:Key="SetIconTileFillBrush" Color="#212D6EFA"/>
                     <SolidColorBrush x:Key="SetNoteFillBrush" Color="#0FFFFFFF"/>
 
+                    <!-- 快捷键按钮全套状态：默认/悬停/按下/录制/键帽（深色） -->
+                    <SolidColorBrush x:Key="HotkeyFillBrush" Color="#14FFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyFillHoverBrush" Color="#22FFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyFillPressedBrush" Color="#0DFFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyStrokeBrush" Color="#26FFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyStrokeHoverBrush" Color="#4DFFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyStrokePressedBrush" Color="#33FFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyRecordingFillBrush" Color="#142D6EFA"/>
+                    <SolidColorBrush x:Key="HotkeyRecordingStrokeBrush" Color="#992D6EFA"/>
+                    <SolidColorBrush x:Key="HotkeyRecordingGlowBrush" Color="#1F2D6EFA"/>
+                    <SolidColorBrush x:Key="HotkeyKeycapFillBrush" Color="#2EFFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyKeycapStrokeBrush" Color="#4DFFFFFF"/>
+
                     <!-- AI 视觉工作台：玻璃卡片 / 胶囊输入 / 加载骨架（深色） -->
                     <SolidColorBrush x:Key="AiCardFillBrush" Color="#17FFFFFF"/>
                     <SolidColorBrush x:Key="AiCardStrokeBrush" Color="#26FFFFFF"/>
@@ -99,6 +112,19 @@
                     <SolidColorBrush x:Key="SetRowHoverBrush" Color="#08000000"/>
                     <SolidColorBrush x:Key="SetIconTileFillBrush" Color="#162D6EFA"/>
                     <SolidColorBrush x:Key="SetNoteFillBrush" Color="#07000000"/>
+
+                    <!-- 快捷键按钮全套状态：默认/悬停/按下/录制/键帽（浅色） -->
+                    <SolidColorBrush x:Key="HotkeyFillBrush" Color="#F2FFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyFillHoverBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyFillPressedBrush" Color="#F2E9EDF4"/>
+                    <SolidColorBrush x:Key="HotkeyStrokeBrush" Color="#1F000000"/>
+                    <SolidColorBrush x:Key="HotkeyStrokeHoverBrush" Color="#592D6EFA"/>
+                    <SolidColorBrush x:Key="HotkeyStrokePressedBrush" Color="#802D6EFA"/>
+                    <SolidColorBrush x:Key="HotkeyRecordingFillBrush" Color="#0D2D6EFA"/>
+                    <SolidColorBrush x:Key="HotkeyRecordingStrokeBrush" Color="#992D6EFA"/>
+                    <SolidColorBrush x:Key="HotkeyRecordingGlowBrush" Color="#172D6EFA"/>
+                    <SolidColorBrush x:Key="HotkeyKeycapFillBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyKeycapStrokeBrush" Color="#33000000"/>
 
                     <!-- AI 视觉工作台：玻璃卡片 / 胶囊输入 / 加载骨架（浅色） -->
                     <SolidColorBrush x:Key="AiCardFillBrush" Color="#F2FFFFFF"/>
@@ -197,25 +223,121 @@
                 <Setter Property="CornerRadius" Value="6"/>
             </Style>
 
-            <!-- 实体键帽质感徽章 -->
+            <!-- 实体键帽质感徽章：随主题取色，底部加厚描边模拟键帽侧壁 -->
             <Style x:Key="HotkeyKeycapStyle" TargetType="Border">
-                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}"/>
-                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
+                <Setter Property="Background" Value="{ThemeResource HotkeyKeycapFillBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource HotkeyKeycapStrokeBrush}"/>
                 <Setter Property="BorderThickness" Value="1,1,1,2"/>
-                <Setter Property="CornerRadius" Value="4"/>
+                <Setter Property="CornerRadius" Value="5"/>
                 <Setter Property="Padding" Value="8,2.5"/>
                 <Setter Property="MinHeight" Value="24"/>
                 <Setter Property="VerticalAlignment" Value="Center"/>
             </Style>
 
-            <Style x:Key="HotkeyButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+            <!--
+                快捷键录制按钮：自带完整视觉状态机。
+                CommonStates 走默认/悬停/按下（轻微回弹）/禁用；
+                RecordingStates 是代码里 GoToState("Recording") 的自定义态，
+                品牌色描边 + 外圈呼吸光晕，两个状态组互不干扰可叠加。
+            -->
+            <Style x:Key="HotkeyButtonStyle" TargetType="Button">
                 <Setter Property="MinHeight" Value="36"/>
                 <Setter Property="MinWidth" Value="140"/>
-                <Setter Property="Padding" Value="10,4"/>
-                <Setter Property="CornerRadius" Value="6"/>
-                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}"/>
-                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
+                <Setter Property="Padding" Value="12,5"/>
+                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="Background" Value="{ThemeResource HotkeyFillBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource HotkeyStrokeBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}"/>
+                <Setter Property="HorizontalAlignment" Value="Right"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid>
+                                <Border x:Name="RecordingGlow"
+                                        CornerRadius="{TemplateBinding CornerRadius}"
+                                        Background="{ThemeResource HotkeyRecordingGlowBrush}"
+                                        BorderBrush="{ThemeResource HotkeyRecordingStrokeBrush}"
+                                        BorderThickness="1.5"
+                                        Opacity="0"/>
+                                <Border x:Name="RootBorder"
+                                        CornerRadius="{TemplateBinding CornerRadius}"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        RenderTransformOrigin="0.5,0.5">
+                                    <Border.RenderTransform>
+                                        <ScaleTransform x:Name="RootScale"/>
+                                    </Border.RenderTransform>
+                                    <ContentPresenter Margin="{TemplateBinding Padding}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      Content="{TemplateBinding Content}"
+                                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                      Foreground="{TemplateBinding Foreground}"/>
+                                </Border>
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="RootScale" Storyboard.TargetProperty="ScaleX"
+                                                                 To="1" Duration="0:0:0.12"/>
+                                                <DoubleAnimation Storyboard.TargetName="RootScale" Storyboard.TargetProperty="ScaleY"
+                                                                 To="1" Duration="0:0:0.12"/>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="PointerOver">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource HotkeyFillHoverBrush}"/>
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="BorderBrush">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource HotkeyStrokeHoverBrush}"/>
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource HotkeyFillPressedBrush}"/>
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="BorderBrush">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource HotkeyStrokePressedBrush}"/>
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <DoubleAnimation Storyboard.TargetName="RootScale" Storyboard.TargetProperty="ScaleX"
+                                                                 To="0.97" Duration="0:0:0.06"/>
+                                                <DoubleAnimation Storyboard.TargetName="RootScale" Storyboard.TargetProperty="ScaleY"
+                                                                 To="0.97" Duration="0:0:0.06"/>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Opacity"
+                                                                 To="0.4" Duration="0:0:0.1"/>
+                                            </Storyboard>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                    <VisualStateGroup x:Name="RecordingStates">
+                                        <!-- 空的 Idle 态让代码里 GoToState("Idle") 能把这个组带回去（状态名须模板内唯一，不能叫 Normal） -->
+                                        <VisualState x:Name="Idle"/>
+                                        <VisualState x:Name="Recording">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="BorderBrush">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource HotkeyRecordingStrokeBrush}"/>
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource HotkeyRecordingFillBrush}"/>
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <DoubleAnimation Storyboard.TargetName="RecordingGlow" Storyboard.TargetProperty="Opacity"
+                                                                 From="0.9" To="0.15" Duration="0:0:1.1"
+                                                                 AutoReverse="True" RepeatBehavior="Forever"/>
+                                            </Storyboard>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <Style x:Key="TagChipItemStyle" TargetType="Border">

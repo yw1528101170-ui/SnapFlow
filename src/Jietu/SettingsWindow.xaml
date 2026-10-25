@@ -2,6 +2,7 @@
     x:Class="Jietu.SettingsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Jietu"
     Title="SnapFlow 设置">
 
     <Grid x:Name="Root" Background="Transparent">
@@ -33,6 +34,13 @@
                         <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="#FFFFFF"/>
                         <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPointerOver" Color="#FFFFFF"/>
                         <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPressed" Color="#FFFFFF"/>
+                        <!-- 行图标语义色：暗色主题整体提亮一档，保证在小尺寸釉块上的对比度 -->
+                        <SolidColorBrush x:Key="RowGlyphBlueBrush" Color="#6E97FF"/>
+                        <SolidColorBrush x:Key="RowGlyphGreenBrush" Color="#4ADE80"/>
+                        <SolidColorBrush x:Key="RowGlyphAmberBrush" Color="#FBBF24"/>
+                        <SolidColorBrush x:Key="RowGlyphPurpleBrush" Color="#B39DF8"/>
+                        <SolidColorBrush x:Key="RowGlyphTealBrush" Color="#2DD4BF"/>
+                        <SolidColorBrush x:Key="RowGlyphRedBrush" Color="#F87171"/>
                     </ResourceDictionary>
                     <ResourceDictionary x:Key="Light">
                         <!-- 品牌色一致性：开关与强调按钮沿用 SnapFlow 极光蓝，而不是系统强调色 -->
@@ -59,6 +67,12 @@
                         <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="#FFFFFF"/>
                         <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPointerOver" Color="#FFFFFF"/>
                         <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPressed" Color="#FFFFFF"/>
+                        <SolidColorBrush x:Key="RowGlyphBlueBrush" Color="#2D6EFA"/>
+                        <SolidColorBrush x:Key="RowGlyphGreenBrush" Color="#0E9F6E"/>
+                        <SolidColorBrush x:Key="RowGlyphAmberBrush" Color="#D97706"/>
+                        <SolidColorBrush x:Key="RowGlyphPurpleBrush" Color="#7C4DEF"/>
+                        <SolidColorBrush x:Key="RowGlyphTealBrush" Color="#0D9488"/>
+                        <SolidColorBrush x:Key="RowGlyphRedBrush" Color="#DC2626"/>
                     </ResourceDictionary>
                 </ResourceDictionary.ThemeDictionaries>
 
@@ -87,6 +101,26 @@
                     <Setter Property="CornerRadius" Value="7"/>
                     <Setter Property="Background" Value="{ThemeResource SetIconTileFillBrush}"/>
                     <Setter Property="VerticalAlignment" Value="Center"/>
+                </Style>
+
+                <!-- 行图标釉块按语义着色：与侧栏彩釉同源的极淡染色，macOS 系统设置式 -->
+                <Style x:Key="RowTileBlueStyle" TargetType="Border" BasedOn="{StaticResource SettingsRowIconStyle}">
+                    <Setter Property="Background" Value="#1F2D6EFA"/>
+                </Style>
+                <Style x:Key="RowTileGreenStyle" TargetType="Border" BasedOn="{StaticResource SettingsRowIconStyle}">
+                    <Setter Property="Background" Value="#1F10B981"/>
+                </Style>
+                <Style x:Key="RowTileAmberStyle" TargetType="Border" BasedOn="{StaticResource SettingsRowIconStyle}">
+                    <Setter Property="Background" Value="#1FF59E0B"/>
+                </Style>
+                <Style x:Key="RowTilePurpleStyle" TargetType="Border" BasedOn="{StaticResource SettingsRowIconStyle}">
+                    <Setter Property="Background" Value="#1F8B5CF6"/>
+                </Style>
+                <Style x:Key="RowTileTealStyle" TargetType="Border" BasedOn="{StaticResource SettingsRowIconStyle}">
+                    <Setter Property="Background" Value="#1F14B8A6"/>
+                </Style>
+                <Style x:Key="RowTileRedStyle" TargetType="Border" BasedOn="{StaticResource SettingsRowIconStyle}">
+                    <Setter Property="Background" Value="#1FEF4444"/>
                 </Style>
 
                 <!-- 卡片内分隔线：与文字左缘对齐（14 + 26 + 12） -->
@@ -363,18 +397,26 @@
                 </Grid.RowDefinitions>
 
                 <InfoBar x:Name="ErrorBar" IsOpen="False" IsClosable="True" Severity="Error"
-                         CornerRadius="10" BorderThickness="1" Margin="0,0,0,12" Grid.Row="0"/>
+                         CornerRadius="10" BorderThickness="1" Margin="0,0,0,12" Grid.Row="0"
+                         MaxWidth="620" HorizontalAlignment="Center"/>
 
                 <!-- 1. 快捷按键面板 -->
                 <ScrollViewer x:Name="PanelHotkeys" Grid.Row="1" Visibility="Visible" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Left">
+                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Center">
                         <StackPanel Spacing="7">
-                            <TextBlock Text="全局快捷键" Style="{StaticResource SettingsGroupLabelStyle}"/>
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <TextBlock Text="全局快捷键" Style="{StaticResource SettingsGroupLabelStyle}"
+                                           VerticalAlignment="Center"/>
+                                <Button x:Name="ResetHotkeysButton" Grid.Column="1" Content="恢复默认"
+                                        Style="{StaticResource QuietButtonStyle}" FontSize="11.5" Padding="10,4"
+                                        CornerRadius="7" Click="OnResetHotkeysClick"
+                                        ToolTipService.ToolTip="恢复为 Alt+A（截图）/ Alt+V（历史与贴图）"/>
+                            </Grid>
                             <Border Style="{StaticResource SettingsCardStyle}">
                                 <StackPanel>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE7EE;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                        <Border Style="{StaticResource RowTileBlueStyle}">
+                                            <FontIcon Glyph="&#xE7EE;" FontSize="12" Foreground="{ThemeResource RowGlyphBlueBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
@@ -389,8 +431,8 @@
                                     </Grid>
                                     <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE8C8;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                        <Border Style="{StaticResource RowTileAmberStyle}">
+                                            <FontIcon Glyph="&#xE8C8;" FontSize="12" Foreground="{ThemeResource RowGlyphAmberBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
@@ -423,13 +465,13 @@
 
                 <!-- 2. 常规与自启面板 -->
                 <ScrollViewer x:Name="PanelGeneral" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Left">
+                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Center">
                         <StackPanel Spacing="7">
                             <TextBlock Text="启动" Style="{StaticResource SettingsGroupLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}">
                                 <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                    <Border Style="{StaticResource SettingsRowIconStyle}">
-                                        <FontIcon Glyph="&#xE7E8;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                    <Border Style="{StaticResource RowTileGreenStyle}">
+                                        <FontIcon Glyph="&#xE7E8;" FontSize="12" Foreground="{ThemeResource RowGlyphGreenBrush}"
                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                     <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
@@ -437,8 +479,9 @@
                                         <TextBlock Style="{StaticResource SettingsRowHintStyle}"
                                                    Text="登录 Windows 后在后台托盘自动就绪"/>
                                     </StackPanel>
-                                    <ToggleSwitch x:Name="StartupSwitch" Grid.Column="2" OnContent="" OffContent=""
-                                                  VerticalAlignment="Center" Toggled="OnSettingToggled"/>
+                                    <!-- MinWidth=0：抵消 WinUI 默认 154 最小宽 + 轨道贴左模板，让胶囊贴齐右缘 -->
+                                    <ToggleSwitch x:Name="StartupSwitch" Grid.Column="2" MinWidth="0" HorizontalAlignment="Right"
+                                                  OnContent="" OffContent="" VerticalAlignment="Center" Toggled="OnSettingToggled"/>
                                 </Grid>
                             </Border>
                         </StackPanel>
@@ -448,26 +491,28 @@
                             <Border Style="{StaticResource SettingsCardStyle}">
                                 <StackPanel>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE74E;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
-                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
+                                    <Border Style="{StaticResource RowTileBlueStyle}">
+                                        <FontIcon Glyph="&#xE74E;" FontSize="12" Foreground="{ThemeResource RowGlyphBlueBrush}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                                             <TextBlock Text="自动保存截图到本地" Style="{StaticResource SettingsRowTitleStyle}"/>
                                             <TextBlock Style="{StaticResource SettingsRowHintStyle}"
                                                        Text="完成截图时除复制到剪贴板，自动保存一份 PNG 到指定目录；超期文件与历史记录使用相同的保留天数"/>
                                         </StackPanel>
-                                        <ToggleSwitch x:Name="SaveSwitch" Grid.Column="2" OnContent="" OffContent=""
-                                                      VerticalAlignment="Center" Toggled="OnSaveToggled"/>
+                                        <ToggleSwitch x:Name="SaveSwitch" Grid.Column="2" MinWidth="0" HorizontalAlignment="Right"
+                                                      OnContent="" OffContent="" VerticalAlignment="Center" Toggled="OnSaveToggled"/>
                                     </Grid>
                                     <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
-                                    <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xED25;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                    <Grid x:Name="FolderRow" Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <Border Style="{StaticResource RowTileAmberStyle}">
+                                            <FontIcon Glyph="&#xED25;" FontSize="12" Foreground="{ThemeResource RowGlyphAmberBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="5" VerticalAlignment="Center">
                                             <TextBlock Text="截图保存目录" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                            <TextBlock Style="{StaticResource SettingsRowHintStyle}"
+                                                       Text="截图 PNG 的存放位置，超期文件由保留天数统一清理"/>
                                             <TextBox x:Name="FolderBox" IsReadOnly="True" CornerRadius="7" FontSize="11.5" Padding="8,4"
                                                      Background="{ThemeResource SubtleFillColorSecondaryBrush}"/>
                                         </StackPanel>
@@ -476,14 +521,14 @@
                                                     Click="OnOpenFolder" ToolTipService.ToolTip="打开文件夹">
                                                 <FontIcon Glyph="&#xE838;" FontSize="12"/>
                                             </Button>
-                                            <Button x:Name="BrowseButton" Content="更改..." MinWidth="64" Click="OnBrowse"
+                                            <Button x:Name="BrowseButton" Content="更改…" MinWidth="64" Click="OnBrowse"
                                                     CornerRadius="7" FontSize="12" Padding="10,5"/>
                                         </StackPanel>
                                     </Grid>
                                     <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE78B;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                        <Border Style="{StaticResource RowTilePurpleStyle}">
+                                            <FontIcon Glyph="&#xE78B;" FontSize="12" Foreground="{ThemeResource RowGlyphPurpleBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
@@ -506,29 +551,34 @@
 
                 <!-- 3. 剪贴板历史面板 -->
                 <ScrollViewer x:Name="PanelClipboard" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Left">
+                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Center">
                         <StackPanel Spacing="7">
                             <TextBlock Text="保留与范围" Style="{StaticResource SettingsGroupLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}">
                                 <StackPanel>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE823;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                        <Border Style="{StaticResource RowTileBlueStyle}">
+                                            <FontIcon Glyph="&#xE823;" FontSize="12" Foreground="{ThemeResource RowGlyphBlueBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                                             <TextBlock Text="历史记录保留天数" Style="{StaticResource SettingsRowTitleStyle}"/>
                                             <TextBlock Style="{StaticResource SettingsRowHintStyle}"
-                                                       Text="未固定的历史记录超期后自动清理（已固定的将永久保留）；保存目录中由本应用生成的截图同样按此天数清理"/>
+                                                       Text="超期后自动清理未固定的记录（已固定的永久保留）；自动保存的截图也按此天数清理"/>
                                         </StackPanel>
-                                        <NumberBox x:Name="RetentionBox" Grid.Column="2" Width="110" Minimum="1" Maximum="3650"
-                                                   SmallChange="1" ValueChanged="OnRetentionChanged" SpinButtonPlacementMode="Compact"
-                                                   CornerRadius="7" FontSize="12"/>
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <NumberBox x:Name="RetentionBox" Width="88" Minimum="1" Maximum="3650"
+                                                       SmallChange="1" ValueChanged="OnRetentionChanged" SpinButtonPlacementMode="Compact"
+                                                       VerticalAlignment="Center"
+                                                       MinHeight="0" Padding="8,4,4,4" CornerRadius="7" FontSize="12"/>
+                                            <TextBlock Text="天" FontSize="12" VerticalAlignment="Center"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                        </StackPanel>
                                     </Grid>
                                     <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE756;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                        <Border Style="{StaticResource RowTileTealStyle}">
+                                            <FontIcon Glyph="&#xE756;" FontSize="12" Foreground="{ThemeResource RowGlyphTealBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
@@ -536,8 +586,8 @@
                                             <TextBlock Style="{StaticResource SettingsRowHintStyle}"
                                                        Text="PowerShell、CMD 及 Windows Terminal 中的文字默认过滤"/>
                                         </StackPanel>
-                                        <ToggleSwitch x:Name="TerminalSwitch" Grid.Column="2" OnContent="" OffContent=""
-                                                      VerticalAlignment="Center" Toggled="OnSettingToggled"/>
+                                        <ToggleSwitch x:Name="TerminalSwitch" Grid.Column="2" MinWidth="0" HorizontalAlignment="Right"
+                                                      OnContent="" OffContent="" VerticalAlignment="Center" Toggled="OnSettingToggled"/>
                                     </Grid>
                                 </StackPanel>
                             </Border>
@@ -547,8 +597,8 @@
                             <TextBlock Text="隐私过滤" Style="{StaticResource SettingsGroupLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}">
                                 <Grid Padding="14,12" ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                                    <Border Style="{StaticResource SettingsRowIconStyle}" VerticalAlignment="Top" Margin="0,1,0,0">
-                                        <FontIcon Glyph="&#xE7BA;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                    <Border Style="{StaticResource RowTileRedStyle}" VerticalAlignment="Top" Margin="0,1,0,0">
+                                        <FontIcon Glyph="&#xE7BA;" FontSize="12" Foreground="{ThemeResource RowGlyphRedBrush}"
                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                     <StackPanel Grid.Column="1" Spacing="9">
@@ -558,23 +608,23 @@
                                                        Text="来自这些程序中的复制将完全被忽略，杜绝敏感记录泄露。"/>
                                         </StackPanel>
 
-                                        <!-- 一键快速添加推荐胶囊 -->
+                                        <!-- 一键快速添加推荐胶囊（已在排除列表中时自动进入禁用态） -->
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <TextBlock Text="快捷添加" FontSize="11" VerticalAlignment="Center"
                                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
-                                            <Button Content="微信" Style="{StaticResource FilterChipStyle}" Click="OnQuickIgnoreClick" Tag="WeChat.exe"/>
-                                            <Button Content="Terminal" Style="{StaticResource FilterChipStyle}" Click="OnQuickIgnoreClick" Tag="WindowsTerminal.exe"/>
-                                            <Button Content="1Password" Style="{StaticResource FilterChipStyle}" Click="OnQuickIgnoreClick" Tag="1Password.exe"/>
+                                            <Button x:Name="WeChatQuickChip" Content="微信" Style="{StaticResource FilterChipStyle}" Click="OnQuickIgnoreClick" Tag="WeChat.exe"/>
+                                            <Button x:Name="TerminalQuickChip" Content="Terminal" Style="{StaticResource FilterChipStyle}" Click="OnQuickIgnoreClick" Tag="WindowsTerminal.exe"/>
+                                            <Button x:Name="OnePasswordQuickChip" Content="1Password" Style="{StaticResource FilterChipStyle}" Click="OnQuickIgnoreClick" Tag="1Password.exe"/>
                                         </StackPanel>
 
-                                        <!-- 动态排除程序标签容器 -->
-                                        <ScrollViewer x:Name="IgnoreChipsScrollViewer" Visibility="Collapsed"
-                                                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                                            <StackPanel x:Name="IgnoreChipsContainer" Orientation="Horizontal" Spacing="6" Margin="0,1"/>
-                                        </ScrollViewer>
+                                        <!-- 动态排除程序标签：自动换行，不再横向滚动 -->
+                                        <local:WrapPanel x:Name="IgnoreChipsContainer" Visibility="Collapsed"/>
+
+                                        <TextBlock x:Name="IgnoreEmptyHint" Style="{StaticResource SettingsRowHintStyle}"
+                                                   Text="暂无排除项，来自所有程序的复制都会被记录"/>
 
                                         <!-- 输入框与添加按钮 -->
-                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" MaxWidth="360" HorizontalAlignment="Left">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" MaxWidth="460" HorizontalAlignment="Left">
                                             <TextBox x:Name="NewIgnoreInput" PlaceholderText="输入程序名，例如 notepad.exe"
                                                      Height="32" Padding="8,4" FontSize="12" CornerRadius="7" KeyDown="OnNewIgnoreKeyDown"/>
                                             <Button Grid.Column="1" Content="添加" Height="32" Padding="14,4" Click="OnAddIgnoreClick"
@@ -589,8 +639,12 @@
                             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                                 <FontIcon Glyph="&#xE72E;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
                                           VerticalAlignment="Top" Margin="0,1,0,0"/>
-                                <TextBlock Grid.Column="1" Style="{StaticResource SettingsRowHintStyle}"
-                                           Text="隐私保护：遵循剪贴板「请勿收录」标记（密码管理器行业标准），并内置密码管理器与系统密码框识别（尽力过滤，不保证覆盖远程桌面、UAC、浏览器扩展等所有场景）。"/>
+                                <StackPanel Grid.Column="1" Spacing="3">
+                                    <TextBlock Text="隐私保护" FontSize="12" FontWeight="SemiBold"/>
+                                    <TextBlock Style="{StaticResource SettingsRowHintStyle}"
+                                               TextWrapping="Wrap"
+                                               Text="遵循剪贴板「请勿收录」标记（密码管理器行业标准），并内置密码管理器与系统密码框识别；尽力过滤，但不保证覆盖远程桌面、UAC、浏览器扩展等所有场景。"/>
+                                </StackPanel>
                             </Grid>
                         </Border>
                     </StackPanel>
@@ -598,14 +652,14 @@
 
                 <!-- 4. 性能监视器 (OSD) 面板 -->
                 <ScrollViewer x:Name="PanelOsd" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Left">
+                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Center">
                         <StackPanel Spacing="7">
                             <TextBlock Text="显示" Style="{StaticResource SettingsGroupLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}">
                                 <StackPanel>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE9D2;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                        <Border Style="{StaticResource RowTileGreenStyle}">
+                                            <FontIcon Glyph="&#xE9D2;" FontSize="12" Foreground="{ThemeResource RowGlyphGreenBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
@@ -613,13 +667,13 @@
                                             <TextBlock Style="{StaticResource SettingsRowHintStyle}"
                                                        Text="置顶监控 GPU 利用率/显存/温度、CPU、内存及网速"/>
                                         </StackPanel>
-                                        <ToggleSwitch x:Name="OsdSwitch" Grid.Column="2" OnContent="" OffContent=""
-                                                      VerticalAlignment="Center" Toggled="OnSettingToggled"/>
+                                        <ToggleSwitch x:Name="OsdSwitch" Grid.Column="2" MinWidth="0" HorizontalAlignment="Right"
+                                                      OnContent="" OffContent="" VerticalAlignment="Center" Toggled="OnSettingToggled"/>
                                     </Grid>
                                     <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE7F4;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                        <Border Style="{StaticResource RowTileBlueStyle}">
+                                            <FontIcon Glyph="&#xE7F4;" FontSize="12" Foreground="{ThemeResource RowGlyphBlueBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
@@ -635,8 +689,8 @@
                                     </Grid>
                                     <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE7F4;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                        <Border Style="{StaticResource RowTileTealStyle}">
+                                            <FontIcon Glyph="&#xE7F4;" FontSize="12" Foreground="{ThemeResource RowGlyphTealBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
@@ -658,8 +712,8 @@
                             <TextBlock Text="行为" Style="{StaticResource SettingsGroupLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}">
                                 <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                    <Border Style="{StaticResource SettingsRowIconStyle}">
-                                        <FontIcon Glyph="&#xE722;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                    <Border Style="{StaticResource RowTileAmberStyle}">
+                                        <FontIcon Glyph="&#xE722;" FontSize="12" Foreground="{ThemeResource RowGlyphAmberBrush}"
                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                     <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
@@ -667,8 +721,8 @@
                                         <TextBlock Style="{StaticResource SettingsRowHintStyle}"
                                                    Text="进入截图遮罩时自动退出视野，避免被截入画面"/>
                                     </StackPanel>
-                                    <ToggleSwitch x:Name="OsdHideOnCaptureSwitch" Grid.Column="2" OnContent="" OffContent=""
-                                                  VerticalAlignment="Center" Toggled="OnSettingToggled"/>
+                                    <ToggleSwitch x:Name="OsdHideOnCaptureSwitch" Grid.Column="2" MinWidth="0" HorizontalAlignment="Right"
+                                                  OnContent="" OffContent="" VerticalAlignment="Center" Toggled="OnSettingToggled"/>
                                 </Grid>
                             </Border>
                         </StackPanel>
@@ -687,12 +741,12 @@
                                     <Border x:Name="OsdPreviewStage"
                                             BorderBrush="{ThemeResource SetCardStrokeBrush}"
                                             BorderThickness="1,1,1,0" CornerRadius="6,6,0,0" Height="62">
-                                        <!-- 壁纸感渐变：让纯黑胶囊的轮廓与投影能读出来（同色底会让它糊成一片） -->
+                                        <!-- 壁纸感渐变：晨空蓝到深靛，让纯黑胶囊的轮廓与投影能读出来（同色底会让它糊成一片） -->
                                         <Border.Background>
                                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                                <GradientStop Color="#77849C" Offset="0"/>
-                                                <GradientStop Color="#4B5A72" Offset="0.42"/>
-                                                <GradientStop Color="#2E3A4D" Offset="1"/>
+                                                <GradientStop Color="#7FA8DE" Offset="0"/>
+                                                <GradientStop Color="#4A6AA6" Offset="0.45"/>
+                                                <GradientStop Color="#22335C" Offset="1"/>
                                             </LinearGradientBrush>
                                         </Border.Background>
                                         <Grid>
@@ -713,18 +767,22 @@
 
                 <!-- 5. AI 视觉配置面板 -->
                 <ScrollViewer x:Name="PanelAi" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Left">
+                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Center">
                         <StackPanel Spacing="7">
                             <TextBlock Text="模型接入" Style="{StaticResource SettingsGroupLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}">
                                 <StackPanel>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE774;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                        <Border Style="{StaticResource RowTileBlueStyle}">
+                                            <FontIcon Glyph="&#xE774;" FontSize="12" Foreground="{ThemeResource RowGlyphBlueBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                                            <TextBlock Text="API 端点 (Base URL)" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock Text="API 端点 (Base URL)" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                                <TextBlock x:Name="AiUrlBadge" FontSize="10.5" VerticalAlignment="Center"
+                                                           Visibility="Collapsed"/>
+                                            </StackPanel>
                                             <TextBlock Style="{StaticResource SettingsRowHintStyle}"
                                                        Text="兼容 OpenAI / DeepSeek / Ollama 协议"/>
                                         </StackPanel>
@@ -733,22 +791,26 @@
                                     </Grid>
                                     <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE8D7;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                        <Border Style="{StaticResource RowTileAmberStyle}">
+                                            <FontIcon Glyph="&#xE8D7;" FontSize="12" Foreground="{ThemeResource RowGlyphAmberBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                                            <TextBlock Text="API 密钥 (API Key)" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock Text="API 密钥 (API Key)" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                                <TextBlock x:Name="AiKeyBadge" FontSize="10.5" VerticalAlignment="Center"
+                                                           Text="未配置" Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                                            </StackPanel>
                                             <TextBlock Style="{StaticResource SettingsRowHintStyle}"
-                                                       Text="保存在本机配置文件中（API Key 已使用 Windows DPAPI 加密）"/>
+                                                       Text="本机加密存储 · Windows DPAPI"/>
                                         </StackPanel>
                                         <PasswordBox x:Name="AiKeyBox" Grid.Column="2" Width="226" CornerRadius="7" FontSize="12"
                                                      PlaceholderText="sk-..." PasswordChanged="OnAiSettingChanged"/>
                                     </Grid>
                                     <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
                                     <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource SettingsRowIconStyle}">
-                                            <FontIcon Glyph="&#xE946;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                        <Border Style="{StaticResource RowTilePurpleStyle}">
+                                            <FontIcon Glyph="&#xE946;" FontSize="12" Foreground="{ThemeResource RowGlyphPurpleBrush}"
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
@@ -759,6 +821,20 @@
                                         <TextBox x:Name="AiModelBox" Grid.Column="2" Width="226" CornerRadius="7" FontSize="12"
                                                  PlaceholderText="gpt-4o-mini" TextChanged="OnAiSettingChanged"/>
                                     </Grid>
+                                    <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
+                                    <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <Border Style="{StaticResource RowTileTealStyle}">
+                                            <FontIcon Glyph="&#xE945;" FontSize="12" Foreground="{ThemeResource RowGlyphTealBrush}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="省流模式 (detail=low)" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                            <TextBlock Style="{StaticResource SettingsRowHintStyle}"
+                                                       Text="低分辨率视觉：显著降低 token 消耗，小字与细节识别率会下降"/>
+                                        </StackPanel>
+                                        <ToggleSwitch x:Name="AiEconomySwitch" Grid.Column="2" MinWidth="0" HorizontalAlignment="Right"
+                                                      OnContent="" OffContent="" VerticalAlignment="Center" Toggled="OnSettingToggled"/>
+                                    </Grid>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -767,13 +843,18 @@
                             <TextBlock Text="提示词" Style="{StaticResource SettingsGroupLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}">
                                 <Grid Padding="14,12" ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                                    <Border Style="{StaticResource SettingsRowIconStyle}" VerticalAlignment="Top" Margin="0,1,0,0">
-                                        <FontIcon Glyph="&#xE8BD;" FontSize="12" Foreground="{ThemeResource SnapFlowAccentBrush}"
+                                    <Border Style="{StaticResource RowTileBlueStyle}" VerticalAlignment="Top" Margin="0,1,0,0">
+                                        <FontIcon Glyph="&#xE8BD;" FontSize="12" Foreground="{ThemeResource RowGlyphBlueBrush}"
                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
-                                    <StackPanel Grid.Column="1" Spacing="6">
+                                        <StackPanel Grid.Column="1" Spacing="6">
                                         <StackPanel Spacing="2">
-                                            <TextBlock Text="默认视觉系统提示词" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock Text="默认视觉系统提示词" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                                <HyperlinkButton x:Name="AiPromptResetButton" Content="恢复默认" Padding="0"
+                                                                 Margin="0,-1,0,0" FontSize="11" VerticalAlignment="Center"
+                                                                 Click="OnResetAiPrompt" ToolTipService.ToolTip="恢复出厂默认提示词"/>
+                                            </StackPanel>
                                             <TextBlock Style="{StaticResource SettingsRowHintStyle}"
                                                        Text="发送截图给模型时的默认指令"/>
                                         </StackPanel>
@@ -786,58 +867,92 @@
                         </StackPanel>
 
                         <!-- 一键握手连通性测试卡片 -->
-                        <Border Style="{StaticResource SettingsCardStyle}" Padding="14,12">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                <StackPanel Spacing="4" VerticalAlignment="Center">
-                                    <TextBlock Text="接口可用性校验" FontSize="12.5" FontWeight="SemiBold"/>
-                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                        <ProgressRing x:Name="AiTestProgress" IsActive="False" Width="13" Height="13" Visibility="Collapsed"/>
-                                        <TextBlock x:Name="AiTestStatusText" FontSize="11.5" VerticalAlignment="Center"
-                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                   Text="点击右侧测试当前 API 密钥与端点握手状态"/>
+                        <StackPanel Spacing="7">
+                            <TextBlock Text="连通性" Style="{StaticResource SettingsGroupLabelStyle}"/>
+                            <Border Style="{StaticResource SettingsCardStyle}" Padding="14,12">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                    <StackPanel Spacing="4" VerticalAlignment="Center">
+                                        <TextBlock Text="接口可用性校验" FontSize="12.5" FontWeight="SemiBold"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <ProgressRing x:Name="AiTestProgress" IsActive="False" Width="13" Height="13" Visibility="Collapsed"/>
+                                            <TextBlock x:Name="AiTestStatusText" FontSize="11.5" VerticalAlignment="Center"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       Text="点击右侧测试当前 API 密钥与端点握手状态"/>
+                                        </StackPanel>
                                     </StackPanel>
-                                </StackPanel>
-                                <Button x:Name="AiTestButton" Grid.Column="1" Content="测试连接" Click="OnTestAiConnection"
-                                        Style="{ThemeResource AccentButtonStyle}" CornerRadius="8" Padding="14,6" FontSize="12"/>
-                            </Grid>
-                        </Border>
+                                    <Button x:Name="AiTestButton" Grid.Column="1" Content="测试连接" Click="OnTestAiConnection"
+                                            Style="{ThemeResource AccentButtonStyle}" CornerRadius="8" Padding="14,6" FontSize="12"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- 6. 关于面板 -->
+                <!-- 6. 关于面板：内容块在可视区内垂直居中，避免大片留白 -->
                 <ScrollViewer x:Name="PanelAbout" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Left">
-                        <Border Style="{StaticResource SettingsCardStyle}" Padding="18">
+                    <StackPanel Spacing="7" MaxWidth="620" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,24">
+                        <Border Style="{StaticResource SettingsCardStyle}" Padding="18,20">
                             <StackPanel Spacing="12">
-                                <StackPanel Orientation="Horizontal" Spacing="13">
-                                    <Border Width="46" Height="46" CornerRadius="11">
+                                <StackPanel Orientation="Horizontal" Spacing="14">
+                                    <Border Width="52" Height="52" CornerRadius="12">
                                         <Border.Background>
                                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                                                 <GradientStop Color="#5B9BFF" Offset="0"/>
                                                 <GradientStop Color="#7341F5" Offset="1"/>
                                             </LinearGradientBrush>
                                         </Border.Background>
-                                        <FontIcon Glyph="&#xE7EE;" FontSize="22" Foreground="White"
+                                        <FontIcon Glyph="&#xE7EE;" FontSize="24" Foreground="White"
                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="SnapFlow (瞬流)" FontSize="17" FontWeight="Bold" CharacterSpacing="-12"/>
+                                        <TextBlock Text="SnapFlow (瞬流)" FontSize="18" FontWeight="Bold" CharacterSpacing="-12"/>
                                         <TextBlock x:Name="AboutVersionText" Text="版本 …" FontSize="11.5"
                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                                     </StackPanel>
                                 </StackPanel>
                                 <TextBlock Text="轻量、现代且高效率的 Windows 智能截图、贴图、屏幕性能监控与剪贴板工作流增强工具。"
                                            Style="{StaticResource SettingsRowHintStyle}"/>
-                                <Rectangle Height="1" Fill="{ThemeResource SetCardStrokeBrush}" Margin="0,2"/>
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBlock Text="开源许可：MIT License" FontSize="11.5" VerticalAlignment="Center"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                                        <Button Content="截图目录" Click="OnOpenFolder" Style="{StaticResource QuietButtonStyle}" FontSize="11.5"/>
-                                        <Button Content="安装目录" Click="OnOpenAppDir" Style="{StaticResource QuietButtonStyle}" FontSize="11.5"/>
-                                    </StackPanel>
-                                </Grid>
                             </StackPanel>
+                        </Border>
+
+                        <StackPanel Spacing="7">
+                            <TextBlock Text="文件位置" Style="{StaticResource SettingsGroupLabelStyle}"/>
+                            <Border Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <Border Style="{StaticResource RowTileBlueStyle}">
+                                            <FontIcon Glyph="&#xE8B7;" FontSize="12" Foreground="{ThemeResource RowGlyphBlueBrush}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="截图目录" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                            <TextBlock Style="{StaticResource SettingsRowHintStyle}"
+                                                       Text="打开保存截图的文件夹"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Content="打开" Click="OnOpenFolder"
+                                                Style="{StaticResource QuietButtonStyle}" FontSize="11.5" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
+                                    <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <Border Style="{StaticResource RowTileTealStyle}">
+                                            <FontIcon Glyph="&#xE838;" FontSize="12" Foreground="{ThemeResource RowGlyphTealBrush}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="安装目录" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                            <TextBlock Style="{StaticResource SettingsRowHintStyle}"
+                                                       Text="定位 SnapFlow 的安装位置"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Content="打开" Click="OnOpenAppDir"
+                                                Style="{StaticResource QuietButtonStyle}" FontSize="11.5" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <Border Style="{StaticResource SettingsNoteStyle}" Margin="0,11,0,0">
+                            <TextBlock Text="开源许可：SnapFlow 以 MIT License 分发，可自由使用、修改与再分发。"
+                                       Style="{StaticResource SettingsRowHintStyle}"/>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>

@@ -22,8 +22,8 @@ public sealed partial class SettingsWindow : Window
     private bool _hiding;
     private bool _loading;
 
-    private string _regionHotkey = "Alt+A";
-    private string _historyHotkey = "Alt+V";
+    private string _regionHotkey = AppSettings.DefaultRegionHotkey;
+    private string _historyHotkey = AppSettings.DefaultHistoryHotkey;
     private readonly List<string> _ignoredProcesses = [];
     private Button? _recordingButton;
 
@@ -89,7 +89,7 @@ public sealed partial class SettingsWindow : Window
         _loading = true;
         try
         {
-            _recordingButton = null;
+            EndRecording();
             var settings = _host.Settings;
 
             _regionHotkey = settings.RegionHotkey;
@@ -117,6 +117,8 @@ public sealed partial class SettingsWindow : Window
             AiKeyBox.Password = settings.AiApiKey ?? "";
             AiModelBox.Text = string.IsNullOrWhiteSpace(settings.AiModel) ? AppSettings.DefaultAiModel : settings.AiModel;
             AiPromptBox.Text = string.IsNullOrWhiteSpace(settings.AiPrompt) ? AppSettings.DefaultAiPrompt : settings.AiPrompt;
+            AiEconomySwitch.IsOn = settings.AiDetailLow;
+            UpdateAiBadges();
 
             _ignoredProcesses.Clear();
             _ignoredProcesses.AddRange(settings.IgnoredProcesses);
@@ -148,7 +150,7 @@ public sealed partial class SettingsWindow : Window
         }
 
         _hiding = true;
-        _recordingButton = null;
+        EndRecording();
         AppWindow.Hide();
         _hiding = false;
     }
@@ -165,17 +167,35 @@ public sealed partial class SettingsWindow : Window
 
     private void StartRecording(Button btn, StackPanel host)
     {
+        EndRecording();
         _recordingButton = btn;
+        // 模板里的自定义录制态：品牌色描边 + 呼吸光晕；另一颗按钮进入禁用态避免同时录制。
+        VisualStateManager.GoToState(btn, "Recording", true);
+        (btn == RegionHotkeyBtn ? HistoryHotkeyBtn : RegionHotkeyBtn).IsEnabled = false;
         host.Children.Clear();
         var recordingText = new TextBlock
         {
-            Text = "按下新快捷键...",
+            Text = "按下新快捷键，Esc 取消",
             FontSize = 12.5,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = (Brush)Application.Current.Resources["SnapFlowAccentBrush"],
             VerticalAlignment = VerticalAlignment.Center,
         };
         host.Children.Add(recordingText);
+    }
+
+    private void EndRecording()
+    {
+        RegionHotkeyBtn.IsEnabled = true;
+        HistoryHotkeyBtn.IsEnabled = true;
+        if (_recordingButton == null)
+        {
+            return;
+        }
+
+        // RecordingStates 组没有 Normal 态，用模板里约定的空 Idle 态把录制态带回去。
+        VisualStateManager.GoToState(_recordingButton, "Idle", true);
+        _recordingButton = null;
     }
 
     private void OnHotkeyDown(object sender, KeyRoutedEventArgs e)
@@ -189,7 +209,7 @@ public sealed partial class SettingsWindow : Window
         if (e.Key == VirtualKey.Escape)
         {
             // 取消录制
-            _recordingButton = null;
+            EndRecording();
             RenderKeycaps(RegionKeycapsHost, _regionHotkey);
             RenderKeycaps(HistoryKeycapsHost, _historyHotkey);
             ShowError(null);
@@ -212,7 +232,7 @@ public sealed partial class SettingsWindow : Window
         // 录制结果必须能被 TryParse 解析，否则写进配置会让整页保存永久失败。
         if (!HotkeyGesture.TryParse(formatted, out _, out var hotkeyError))
         {
-            _recordingButton = null;
+            EndRecording();
             RenderKeycaps(RegionKeycapsHost, _regionHotkey);
             RenderKeycaps(HistoryKeycapsHost, _historyHotkey);
             ShowError(string.IsNullOrWhiteSpace(hotkeyError) ? $"不支持把 {formatted} 设为快捷键。" : hotkeyError);
@@ -228,7 +248,17 @@ public sealed partial class SettingsWindow : Window
             _historyHotkey = formatted;
         }
 
-        _recordingButton = null;
+        EndRecording();
+        RenderKeycaps(RegionKeycapsHost, _regionHotkey);
+        RenderKeycaps(HistoryKeycapsHost, _historyHotkey);
+        ApplyAndSave();
+    }
+
+    private void OnResetHotkeysClick(object sender, RoutedEventArgs e)
+    {
+        EndRecording();
+        _regionHotkey = AppSettings.DefaultRegionHotkey;
+        _historyHotkey = AppSettings.DefaultHistoryHotkey;
         RenderKeycaps(RegionKeycapsHost, _regionHotkey);
         RenderKeycaps(HistoryKeycapsHost, _historyHotkey);
         ApplyAndSave();
@@ -240,6 +270,7 @@ public sealed partial class SettingsWindow : Window
         if (string.IsNullOrWhiteSpace(hotkey))
         {
             host.Children.Add(new TextBlock { Text = "未设置", FontSize = 12, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] });
+            UpdateResetHotkeysState();
             return;
         }
 
@@ -274,6 +305,16 @@ public sealed partial class SettingsWindow : Window
             };
             host.Children.Add(keyBorder);
         }
+
+        UpdateResetHotkeysState();
+    }
+
+    /// <summary>已是默认热键时禁用「恢复默认」，避免一个无效按钮悬在组头。</summary>
+    private void UpdateResetHotkeysState()
+    {
+        var changed = !string.Equals(_regionHotkey, AppSettings.DefaultRegionHotkey, StringComparison.OrdinalIgnoreCase)
+                      || !string.Equals(_historyHotkey, AppSettings.DefaultHistoryHotkey, StringComparison.OrdinalIgnoreCase);
+        ResetHotkeysButton.IsEnabled = changed;
     }
 
     private void OnSettingToggled(object sender, RoutedEventArgs e)
@@ -329,6 +370,8 @@ public sealed partial class SettingsWindow : Window
     private void UpdateFolderEnabled()
     {
         var enabled = SaveSwitch.IsOn;
+        // 除了禁用控件，整行一起降不透明度：让「目录跟着自动保存走」的联动一眼可见
+        FolderRow.Opacity = enabled ? 1 : 0.45;
         FolderBox.IsEnabled = enabled;
         BrowseButton.IsEnabled = enabled;
         OpenFolderButton.IsEnabled = enabled;
@@ -400,20 +443,8 @@ public sealed partial class SettingsWindow : Window
 
     private void AddIgnoreProcess()
     {
-        var text = NewIgnoreInput.Text.Trim().ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(text))
+        if (AddIgnoredProcess(NewIgnoreInput.Text))
         {
-            return;
-        }
-
-        if (!text.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-        {
-            text += ".exe";
-        }
-
-        if (!_ignoredProcesses.Contains(text, StringComparer.OrdinalIgnoreCase))
-        {
-            _ignoredProcesses.Add(text);
             RenderIgnoreChips();
             NewIgnoreInput.Text = "";
             ApplyAndSave();
@@ -424,10 +455,35 @@ public sealed partial class SettingsWindow : Window
         }
     }
 
+    /// <summary>归一化为小写 .exe 名称并去重；返回是否真的新增了一条。</summary>
+    private bool AddIgnoredProcess(string raw)
+    {
+        var text = raw.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        if (!text.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            text += ".exe";
+        }
+
+        if (_ignoredProcesses.Contains(text, StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        _ignoredProcesses.Add(text);
+        return true;
+    }
+
     private void RenderIgnoreChips()
     {
         IgnoreChipsContainer.Children.Clear();
-        IgnoreChipsScrollViewer.Visibility = _ignoredProcesses.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var hasItems = _ignoredProcesses.Count > 0;
+        IgnoreChipsContainer.Visibility = hasItems ? Visibility.Visible : Visibility.Collapsed;
+        IgnoreEmptyHint.Visibility = hasItems ? Visibility.Collapsed : Visibility.Visible;
         foreach (var item in _ignoredProcesses)
         {
             var proc = item;
@@ -466,6 +522,18 @@ public sealed partial class SettingsWindow : Window
             chip.Child = sp;
             IgnoreChipsContainer.Children.Add(chip);
         }
+
+        // 快捷添加胶囊与列表状态同步：已排除的置灰，避免点了没反应的「假按钮」
+        SyncQuickChip(WeChatQuickChip, "WeChat.exe");
+        SyncQuickChip(TerminalQuickChip, "WindowsTerminal.exe");
+        SyncQuickChip(OnePasswordQuickChip, "1Password.exe");
+    }
+
+    private void SyncQuickChip(Button chip, string proc)
+    {
+        var added = _ignoredProcesses.Contains(proc, StringComparer.OrdinalIgnoreCase);
+        chip.IsEnabled = !added;
+        ToolTipService.SetToolTip(chip, added ? "已在排除列表中" : $"一键排除 {proc}");
     }
 
     private void ApplyAndSave()
@@ -499,6 +567,7 @@ public sealed partial class SettingsWindow : Window
             AiApiKey = AiKeyBox.Password.Trim(),
             AiModel = string.IsNullOrWhiteSpace(AiModelBox.Text) ? AppSettings.DefaultAiModel : AiModelBox.Text.Trim(),
             AiPrompt = string.IsNullOrWhiteSpace(AiPromptBox.Text) ? AppSettings.DefaultAiPrompt : AiPromptBox.Text.Trim(),
+            AiDetailLow = AiEconomySwitch.IsOn,
         };
 
         var error = _host.TryApply(next);
@@ -516,8 +585,39 @@ public sealed partial class SettingsWindow : Window
 
     private void OnAiSettingChanged(object sender, RoutedEventArgs e)
     {
+        UpdateAiBadges();
         if (_loading) return;
         ApplyAndSave();
+    }
+
+    // 密钥与端点的实时状态徽标：PasswordBox 看不出是否已配置，端点写错也只在点“测试连接”时才暴露。
+    private void UpdateAiBadges()
+    {
+        if (AiKeyBadge is null) return;
+
+        var hasKey = !string.IsNullOrWhiteSpace(AiKeyBox.Password);
+        AiKeyBadge.Text = hasKey ? "已配置" : "未配置";
+        AiKeyBadge.Foreground = hasKey
+            ? (Brush)Application.Current.Resources["SnapFlowSuccessBrush"]
+            : (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"];
+
+        // 端点留空走默认值（TryResolveApiBase 内部兜底），只有真的填错了才标红。
+        if (AiVisionService.TryResolveApiBase(AiUrlBox.Text, out _, out _))
+        {
+            AiUrlBadge.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            AiUrlBadge.Text = "地址无效";
+            AiUrlBadge.Foreground = (Brush)Application.Current.Resources["SnapFlowDangerBrush"];
+            AiUrlBadge.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void OnResetAiPrompt(object sender, RoutedEventArgs e)
+    {
+        // 触发 AiPromptBox.TextChanged → OnAiSettingChanged 完成落盘，这里只改值。
+        AiPromptBox.Text = AppSettings.DefaultAiPrompt;
     }
 
         private void OnOsdPositionChanged(object sender, SelectionChangedEventArgs e)
@@ -843,9 +943,8 @@ public sealed partial class SettingsWindow : Window
     {
         if (sender is Button btn && btn.Tag is string proc && !string.IsNullOrWhiteSpace(proc))
         {
-            if (!_ignoredProcesses.Contains(proc, StringComparer.OrdinalIgnoreCase))
+            if (AddIgnoredProcess(proc))
             {
-                _ignoredProcesses.Add(proc);
                 RenderIgnoreChips();
                 ApplyAndSave();
             }
@@ -866,18 +965,10 @@ public sealed partial class SettingsWindow : Window
 
         try
         {
-            // 与 AiVisionService 同一规则：http 明文端点会把 API Key 明文出网，仅放行本机回环。
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var baseUri)
-                || (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps))
+            // 与 AiVisionService 同一份端点校验规则（绝对地址 + http 仅放行回环），不再各自维护一份。
+            if (!AiVisionService.TryResolveApiBase(AiUrlBox.Text, out var baseUri, out var urlError))
             {
-                AiTestStatusText.Text = "✕ 地址无效：请填写以 http:// 或 https:// 开头的完整接口地址";
-                AiTestStatusText.Foreground = (Brush)Application.Current.Resources["SnapFlowDangerBrush"];
-                return;
-            }
-
-            if (baseUri.Scheme == Uri.UriSchemeHttp && !AiVisionService.IsLoopbackHost(baseUri.Host))
-            {
-                AiTestStatusText.Text = "✕ 不支持 http:// 明文端点（API Key 会明文传输），请改用 https://；本地服务可用 http://127.0.0.1";
+                AiTestStatusText.Text = "✕ " + urlError;
                 AiTestStatusText.Foreground = (Brush)Application.Current.Resources["SnapFlowDangerBrush"];
                 return;
             }
@@ -888,8 +979,16 @@ public sealed partial class SettingsWindow : Window
             {
                 client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", key);
             }
-            var endpoint = url.TrimEnd('/') + "/models";
-            var resp = await client.GetAsync(endpoint);
+
+            // 用户可能直接粘贴了完整 chat 地址：先剥掉 /chat/completions 再拼 /models。
+            const string ChatSuffix = "/chat/completions";
+            var baseText = baseUri.AbsoluteUri;
+            if (baseText.EndsWith(ChatSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                baseText = baseText[..^ChatSuffix.Length];
+            }
+
+            var resp = await client.GetAsync(baseText + "/models");
             sw.Stop();
             if (resp.IsSuccessStatusCode)
             {
@@ -898,13 +997,13 @@ public sealed partial class SettingsWindow : Window
             }
             else
             {
-                AiTestStatusText.Text = $"✕ 响应异常: {(int)resp.StatusCode} {resp.ReasonPhrase}";
+                AiTestStatusText.Text = $"✕ 响应异常: {(int)resp.StatusCode} {resp.ReasonPhrase}（部分网关不提供 /models，此失败不代表视觉请求不可用）";
                 AiTestStatusText.Foreground = (Brush)Application.Current.Resources["SnapFlowDangerBrush"];
             }
         }
         catch (Exception ex)
         {
-            AiTestStatusText.Text = $"✕ 连接失败: {ex.Message}";
+            AiTestStatusText.Text = $"✕ 连接失败: {ex.Message}（部分网关不提供 /models，此失败不代表视觉请求不可用）";
             AiTestStatusText.Foreground = (Brush)Application.Current.Resources["SnapFlowDangerBrush"];
         }
         finally
