@@ -997,17 +997,71 @@
                                                 <TextBlock x:Name="VaultBrowserStatus" Style="{StaticResource SettingsRowHintStyle}"
                                                            Text="未启用"/>
                                             </StackPanel>
+                                            <!-- 已启用时头部直接给「禁用」，不用去高级区里找 -->
+                                            <Button x:Name="VaultTopDisableButton" Grid.Column="2" Content="禁用"
+                                                    Click="OnVaultBrowserDisable" CornerRadius="7" VerticalAlignment="Center"
+                                                    Visibility="Collapsed"/>
                                         </Grid>
-                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                                            <TextBox x:Name="VaultExtIdBox" PlaceholderText="扩展 ID（chrome://extensions 中复制）"
-                                                     CornerRadius="7" FontSize="12"/>
-                                            <Button x:Name="VaultBrowserEnableButton" Grid.Column="1" Content="启用"
-                                                    Click="OnVaultBrowserEnable" CornerRadius="7"/>
-                                            <Button x:Name="VaultBrowserDisableButton" Grid.Column="2" Content="禁用"
-                                                    Click="OnVaultBrowserDisable" CornerRadius="7"/>
-                                        </Grid>
-                                        <TextBlock Style="{StaticResource SettingsRowHintStyle}" TextWrapping="Wrap"
-                                                   Text="先在浏览器加载 ext/snapflow-vault 扩展，再把其 ID 填到这里（粘贴 chrome-extension:// 链接也可以，会自动提取）。关联时桌面端会弹出确认。"/>
+                                        <!-- 引导只在未启用时出现；装好之后这页就该安静下来 -->
+                                        <TextBlock x:Name="VaultBrowserGuide" Style="{StaticResource SettingsRowHintStyle}" TextWrapping="Wrap"
+                                                   Text="点「一键安装」：桌面端自动写好关联、打开浏览器扩展页并弹出文件夹，把文件夹拖进扩展页就装好了。"/>
+                                        <Border x:Name="VaultChromeRow" CornerRadius="8" Padding="12,9"
+                                                Background="{ThemeResource SetNoteFillBrush}">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                                <FontIcon Glyph="&#xE774;" FontSize="14" VerticalAlignment="Center"
+                                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="Google Chrome" FontSize="12.5" FontWeight="SemiBold"
+                                                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                                                    <TextBlock x:Name="VaultChromeHint" FontSize="10.5" Text="已检测到"
+                                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                                                </StackPanel>
+                                                <Button Grid.Column="2" Content="一键安装" Click="OnInstallToBrowser"
+                                                        Tag="chrome" CornerRadius="7"
+                                                        ToolTipService.ToolTip="自动写好关联，打开 Chrome 扩展页并弹出扩展文件夹"/>
+                                            </Grid>
+                                        </Border>
+                                        <Border x:Name="VaultEdgeRow" CornerRadius="8" Padding="12,9"
+                                                Background="{ThemeResource SetNoteFillBrush}">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                                <FontIcon Glyph="&#xE774;" FontSize="14" VerticalAlignment="Center"
+                                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="Microsoft Edge" FontSize="12.5" FontWeight="SemiBold"
+                                                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                                                    <TextBlock x:Name="VaultEdgeHint" FontSize="10.5" Text="已检测到"
+                                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                                                </StackPanel>
+                                                <Button Grid.Column="2" Content="一键安装" Click="OnInstallToBrowser"
+                                                        Tag="edge" CornerRadius="7"
+                                                        ToolTipService.ToolTip="自动写好关联，打开 Edge 扩展页并弹出扩展文件夹"/>
+                                            </Grid>
+                                        </Border>
+                                        <!-- 手动配置默认收起：扩展 ID 手填 / 重启关联属于兜底路径 -->
+                                        <Expander x:Name="VaultAdvancedExpander" HorizontalAlignment="Stretch"
+                                                  HorizontalContentAlignment="Stretch" CornerRadius="8" IsExpanded="False">
+                                            <Expander.Header>
+                                                <StackPanel Spacing="1">
+                                                    <TextBlock Text="手动配置" FontSize="12.5" FontWeight="SemiBold"
+                                                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                                                    <TextBlock Text="一般不用：手动填扩展 ID 或直接启停关联" FontSize="10.5"
+                                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                                                </StackPanel>
+                                            </Expander.Header>
+                                            <StackPanel Spacing="9" Padding="2,4,2,8">
+                                                <TextBlock Style="{StaticResource SettingsRowHintStyle}" TextWrapping="Wrap"
+                                                           Text="扩展 ID 可点「自动填入」按扩展文件夹路径计算，也可从浏览器扩展页复制粘贴。"/>
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                    <TextBox x:Name="VaultExtIdBox" PlaceholderText="扩展 ID（点「自动填入」可免复制）"
+                                                             CornerRadius="7" FontSize="12"/>
+                                                    <Button x:Name="VaultDetectButton" Grid.Column="1" Content="自动填入"
+                                                            Click="OnVaultDetectExtensionId" CornerRadius="7"
+                                                            ToolTipService.ToolTip="按扩展文件夹路径计算扩展 ID"/>
+                                                </Grid>
+                                                <Button x:Name="VaultBrowserEnableButton" Content="启用" HorizontalAlignment="Left"
+                                                        Click="OnVaultBrowserEnable" CornerRadius="7"/>
+                                            </StackPanel>
+                                        </Expander>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>

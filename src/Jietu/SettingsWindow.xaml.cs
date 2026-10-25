@@ -763,6 +763,16 @@ public sealed partial class SettingsWindow : Window
         {
             VaultExtIdBox.Text = configuredId;
         }
+        else if (VaultExtIdBox.FocusState == FocusState.Unfocused && string.IsNullOrWhiteSpace(VaultExtIdBox.Text))
+        {
+            // 还没关联时按扩展文件夹路径预计算 ID：用户在浏览器里加载的就是这个文件夹，
+            // ID 一致，免去去 chrome://extensions 复制粘贴这一步。
+            var folder = BrowserIntegration.FindExtensionFolder();
+            if (folder != null)
+            {
+                VaultExtIdBox.Text = BrowserIntegration.ComputeUnpackedExtensionId(folder);
+            }
+        }
 
         VaultBrowserStatus.Text = (enabled, configuredId) switch
         {
@@ -770,9 +780,128 @@ public sealed partial class SettingsWindow : Window
             (true, null) => "已启用，但尚未关联扩展 ID —— 浏览器扩展将无法连接，填入 ID 后点“启用”重新写入",
             _ => "未启用",
         };
+        // 状态驱动显隐：装好之后这页安静下来，引导收起、禁用提到头部；
+        // ID 手填这类兜底路径收进默认折叠的「手动配置」。
+        VaultBrowserGuide.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
+        VaultTopDisableButton.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
         VaultBrowserEnableButton.IsEnabled = !enabled || (!string.IsNullOrWhiteSpace(VaultExtIdBox.Text)
             && !string.Equals(VaultExtIdBox.Text.Trim(), configuredId, StringComparison.OrdinalIgnoreCase));
-        VaultBrowserDisableButton.IsEnabled = enabled;
+
+        // 浏览器检测行：装了哪个浏览器就显示哪一行。
+        var browsers = BrowserIntegration.DetectBrowsers();
+        VaultChromeRow.Visibility = browsers.Any(b => b.Id == "chrome") ? Visibility.Visible : Visibility.Collapsed;
+        VaultEdgeRow.Visibility = browsers.Any(b => b.Id == "edge") ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// 一键安装：写好 NMH 关联（ID 按扩展文件夹路径计算）→ 打开浏览器扩展页 →
+    /// 弹出扩展文件夹，用户把文件夹拖进扩展页即完成，全程无需复制 ID。
+    /// </summary>
+    private async void OnInstallToBrowser(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string browserId })
+        {
+            return;
+        }
+
+        var folder = BrowserIntegration.FindExtensionFolder();
+        if (folder == null)
+        {
+            ShowError("没有找到扩展文件夹（ext/snapflow-vault）。");
+            return;
+        }
+
+        var id = BrowserIntegration.ComputeUnpackedExtensionId(folder);
+        var error = BrowserIntegration.Enable(id);
+        if (error != null)
+        {
+            ShowError(error);
+            return;
+        }
+
+        _host.Settings.VaultBrowserIntegration = true;
+        ApplyAndSave();
+        RefreshBrowserIntegrationState();
+
+        var target = browserId switch
+        {
+            "edge" => BrowserIntegration.DetectBrowsers().FirstOrDefault(b => b.Id == "edge"),
+            _ => BrowserIntegration.DetectBrowsers().FirstOrDefault(b => b.Id == "chrome"),
+        };
+        if (target == null)
+        {
+            ShowError("没有找到这个浏览器，可能未安装。");
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target.ExePath, target.ExtensionsUrl)
+            {
+                UseShellExecute = true,
+            });
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{folder}\"");
+        }
+        catch (Exception ex)
+        {
+            ShowError("无法启动浏览器：" + ex.Message);
+            return;
+        }
+
+        await ShowSettingsInfoAsync(
+            "最后一步：把文件夹拖进扩展页",
+            "① 浏览器已打开扩展管理页，资源管理器已弹出并选中 snapflow-vault 文件夹\n"
+            + "② 如果提示需要「开发者模式」，点允许即可\n"
+            + "③ 把这个文件夹拖进扩展页，安装就完成了\n\n"
+            + "装好后网页上的密码框会自动出现填充按钮，首次连接时桌面端会弹确认。");
+    }
+
+    /// <summary>设置页内的提示对话框（与 PasswordWindow 的 ShowAppConfirmAsync 同观感）。</summary>
+    private async Task ShowSettingsInfoAsync(string title, string message)
+    {
+        await new ContentDialog
+        {
+            Title = title,
+            Content = new TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 12.5,
+                LineHeight = 20,
+                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            },
+            CloseButtonText = "知道了",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = Content.XamlRoot,
+        }.ShowAsync();
+    }
+
+    /// <summary>按扩展文件夹路径算出 ID 并填入，替代手工复制。</summary>
+    private void OnVaultDetectExtensionId(object sender, RoutedEventArgs e)
+    {
+        var folder = BrowserIntegration.FindExtensionFolder();
+        if (folder == null)
+        {
+            ShowError("没有找到扩展文件夹（ext/snapflow-vault）。如果你把扩展复制到了别处加载，请仍从 chrome://extensions 复制 ID 粘进来。");
+            return;
+        }
+
+        VaultExtIdBox.Text = BrowserIntegration.ComputeUnpackedExtensionId(folder);
+        RefreshBrowserIntegrationState();
+        _host.Toast.Show("已按扩展文件夹路径算出 ID 并填入");
+    }
+
+    /// <summary>在资源管理器中打开扩展文件夹，省去在仓库里翻找。</summary>
+    private void OnVaultOpenExtensionFolder(object sender, RoutedEventArgs e)
+    {
+        var folder = BrowserIntegration.FindExtensionFolder();
+        if (folder == null)
+        {
+            ShowError("没有找到扩展文件夹（ext/snapflow-vault）。");
+            return;
+        }
+
+        System.Diagnostics.Process.Start("explorer.exe", folder);
     }
 
     /// <summary>兼容粘贴完整 chrome-extension:// 链接或带空白的 ID。</summary>

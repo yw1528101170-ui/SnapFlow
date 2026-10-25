@@ -1,4 +1,4 @@
-﻿using Microsoft.UI;
+using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
@@ -22,9 +22,6 @@ public sealed class VaultRow
     public string Initial { get; init; } = "";
     public Brush AvatarBrush { get; init; } = new SolidColorBrush(Colors.Transparent);
     public Brush AvatarFgBrush { get; init; } = new SolidColorBrush(Colors.Transparent);
-    // 行尾语义小图标：x:Bind 不做 bool→Visibility 的隐式转换，这里直接暴露可见性。
-    public Visibility TotpBadgeVisibility { get; init; } = Visibility.Collapsed;
-    public Visibility NoteBadgeVisibility { get; init; } = Visibility.Collapsed;
 }
 
 /// <summary>
@@ -48,8 +45,8 @@ public sealed partial class PasswordWindow : Window
     // 编辑器脏标记：LoadEditor/ClearEditor/显示切换期间置 _editorLoading 抑制误报，
     // 「未保存」徽标的可见性即脏状态本身。
     private bool _editorLoading;
-    // TOTP 验证码 1 秒刷新计时器。
-    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _totpTimer;
+    // 详情态密码显示开关：切换条目/进入编辑时复位为隐藏。
+    private bool _detailRevealed;
     // XAML 解析期间 ValueChanged/Checked/SelectionChanged 就会触发（NumberBox 的 Value、
     // CheckBox 的 IsChecked、ComboBox 的 SelectedIndex 都是解析期赋值），
     // 此时后面的命名元素还不存在——所有这类处理器必须先看本标志。
@@ -63,17 +60,12 @@ public sealed partial class PasswordWindow : Window
     // 编辑器「干净」时的内容指纹：程序化装载会延后派发变更事件，靠它区分真改与假改。
     private string _cleanSignature = "";
 
-    // 列表过滤/排序状态：只影响展示，不写回库文件。
-    private VaultFilter _filter = VaultFilter.All;
+    // 列表排序状态：只影响展示，不写回库文件。
     private VaultSort _sort = VaultSort.Updated;
-    // 右侧详情区是否有内容（编辑器或新建立稿）：与生成器面板一起决定详情列的显隐。
+    // 右侧详情区是否有内容（编辑器或新建草稿）：决定详情列的显隐。
     private bool _editorVisible;
-    // 最近一次刷新后列表里的可见行数（0 且库非空 = 被搜索/筛选筛空）。
+    // 最近一次刷新后列表里的可见行数（0 且库非空 = 被搜索筛空）。
     private int _visibleRowCount;
-    // 分段控件滑块当前所在位置（DIP），供弹簧动画从当前位置起跳。
-    private double _thumbX;
-
-    private enum VaultFilter { All, Login, Note, Totp }
 
     private enum VaultSort { Updated, Title }
 
@@ -83,6 +75,15 @@ public sealed partial class PasswordWindow : Window
         _vault = host.Vault;
         InitializeComponent();
         _xamlReady = true;
+        // WinUI 的 ScrollViewer 会把 Stretch+MaxWidth 的内容右对齐（普通 Grid 是居中），
+        // 表单宽度在这里钉成 min(720, 视口) 并显式居中，和下方操作条永远同列同宽。
+        // 720 是双栏表单的舒适上限：空库时两栏各约 350，有列表列时各约 315。
+        DetailPane.SizeChanged += (_, e) =>
+        {
+            var width = Math.Min(720, Math.Max(160, e.NewSize.Width - 2));
+            DetailRoot.Width = width;
+            EditorActionBar.MaxWidth = width;
+        };
         _fieldIdleStroke = MasterFieldShell.BorderBrush;
         WindowChrome.Apply(this, TitleBar, Root);
         AppWindow.Title = "密码库";
@@ -124,10 +125,6 @@ public sealed partial class PasswordWindow : Window
 
             // 输入框描边也是主题资源：重新取一份空闲态的颜色，别让上一套主题的灰边留着。
             _fieldIdleStroke = MasterFieldShell.BorderBrush = (Brush)Application.Current.Resources["HistFieldStrokeBrush"];
-            if (_vault.IsUnlocked)
-            {
-                UpdateFilterChips(animate: false);
-            }
         };
     }
 
@@ -201,7 +198,6 @@ public sealed partial class PasswordWindow : Window
         AppWindow.Hide();
         AppWindow.IsShownInSwitchers = false;
         SensitiveForeground.SetVaultWindow(IntPtr.Zero);
-        StopTotpTimer();
         // 编辑器里的明文不能留在控件里跨「关闭」存续：重置整个编辑区。
         ClearEditor();
     }
@@ -241,6 +237,41 @@ public sealed partial class PasswordWindow : Window
 
     /// <summary>从加密备份恢复：与 CSV 导入相同的合并去重策略，不覆盖现有条目。</summary>
 
+
+    /// <summary>
+    /// 应用内确认 / 提示对话框（替代 Win32 MessageBox）：跟随窗口主题与明暗色。
+    /// confirmText 为 null 时只有「知道了」一个按钮，用于纯提示；
+    /// danger=true 时默认焦点落在「取消」上，回车不会误触发不可逆操作。
+    /// </summary>
+    private async Task<bool> ShowAppConfirmAsync(string title, string message, string? confirmText, bool danger = false)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 12.5,
+                LineHeight = 20,
+                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            },
+            XamlRoot = Content.XamlRoot,
+        };
+        if (confirmText == null)
+        {
+            dialog.CloseButtonText = "知道了";
+            dialog.DefaultButton = ContentDialogButton.Close;
+        }
+        else
+        {
+            dialog.PrimaryButtonText = confirmText;
+            dialog.CloseButtonText = "取消";
+            dialog.DefaultButton = danger ? ContentDialogButton.Close : ContentDialogButton.Primary;
+        }
+
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
 
     /// <summary>窗口内模态对话框。窗口可能处于隐藏态，隐藏时退回 MessageBox 提示。</summary>
     private async Task<ContentDialogResult> ShowVaultDialog(
@@ -322,28 +353,16 @@ public sealed partial class PasswordWindow : Window
     // ---------------- 分段筛选 / 排序 ----------------
 
 
-    /// <summary>
-    /// 分段控件选中态：滑块弹簧平移到当前段 + 主文字色 / 半粗体。
-    /// 与 HistoryWindow 的 UpdateFilterChips 同一套观感（不染色，只靠滑块与字重）。
-    /// </summary>
-
-    /// <summary>把滑块滑到当前筛选位置（首帧直接落位，避免打开窗口时飞入）。</summary>
-
-
     /// <summary>有输入才显示清除按钮；与剪贴板历史一致，搜索胶囊里不再塞 Ctrl+F 键帽。</summary>
 
 
     /// <summary>
     /// 内容区显隐的唯一出口（列表卡片 / 空态 / 详情 / 引导占位）：
-    /// 编辑器与生成器任一打开就算「详情区已展开」，空库此时让位给表单而不是压一层欢迎页。
+    /// 编辑器或已选中条目就算「详情区已展开」，空库此时让位给表单而不是压一层欢迎页。
     /// </summary>
 
 
     // ---------------- 编辑器 ----------------
-
-    private bool IsNoteKind => KindCombo.SelectedIndex == 1;
-
-    /// <summary>类型切换：安全笔记没有用户名/密码/网址/TOTP，收起凭据字段避免误填。</summary>
 
 
     /// <summary>
@@ -367,12 +386,6 @@ public sealed partial class PasswordWindow : Window
 
 
     // ---------------- 键盘快捷键 ----------------
-
-
-    // ---------------- 生成器 ----------------
-
-
-    /// <summary>选项变化（长度/词数/短语/字符类开关）时立即重生成，所见即所得。</summary>
 
 
     // ---------------- TOTP ----------------

@@ -54,12 +54,12 @@ public static class VaultMessages
 
     public const string OpenVaultFolder = "打开所在文件夹";
     public const string RestoreFromBackup = "用备份文件恢复";
-    public const string RetryAfterMove = "我已移走旧库，重试";
+    public const string RetryAfterMove = "重新检测";
 
     // ---------------- 创建受阻 / 读取失败 ----------------
 
-    /// <summary>库已存在（含 v1）时点"创建"给的提示：说清原因与下一步，不静默禁用按钮。</summary>
-    public const string CreateBlockedByExistingVault = "当前目录已有旧版本密码库，请先备份并移走后再创建。";
+    /// <summary>库已存在时点"创建"给的提示。v1 旧库不触发这条（会改名留档后直接创建）。</summary>
+    public const string CreateBlockedByExistingVault = "当前目录已有密码库，请先备份并移走后再创建。";
 
     public const string MasterPasswordTooShort = "主密码至少需要 12 个字符。";
 

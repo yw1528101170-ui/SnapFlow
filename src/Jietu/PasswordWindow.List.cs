@@ -37,8 +37,6 @@ public sealed partial class PasswordWindow
                 Initial = avatar.Initial,
                 AvatarBrush = avatar.Background,
                 AvatarFgBrush = avatar.Foreground,
-                TotpBadgeVisibility = entry.TotpSecret.Length > 0 ? Visibility.Visible : Visibility.Collapsed,
-                NoteBadgeVisibility = entry.Kind == "note" ? Visibility.Visible : Visibility.Collapsed,
             });
         }
 
@@ -56,8 +54,8 @@ public sealed partial class PasswordWindow
             }
         }
 
-        // 计数走标题栏副标题（同 HistoryWindow 的 HeaderMeta）：未过滤只给总数，过滤给「命中 / 总数」。
-        var narrowed = query != null || _filter != VaultFilter.All;
+        // 计数走标题栏副标题（同 HistoryWindow 的 HeaderMeta）：未过滤只给总数，搜索中给「命中 / 总数」。
+        var narrowed = query != null;
         CountBadge.Text = narrowed
             ? $"{rows.Count} / {data.Entries.Count} 个条目"
             : $"{data.Entries.Count} 个条目";
@@ -67,7 +65,7 @@ public sealed partial class PasswordWindow
         if (data.Entries.Count == 0)
         {
             EmptyTitle.Text = "还没有条目";
-            EmptyHint.Text = "保存登录凭据、安全笔记与验证码，全部在本机加密存储。";
+            EmptyHint.Text = "保存用户名与密码，全部在本机加密存储。";
         }
 
         UpdateSearchAffordances();
@@ -77,14 +75,6 @@ public sealed partial class PasswordWindow
     private IEnumerable<VaultEntry> FilteredEntries(List<VaultEntry> entries, string? query)
     {
         IEnumerable<VaultEntry> source = entries;
-        source = _filter switch
-        {
-            VaultFilter.Login => source.Where(e => e.Kind != "note"),
-            VaultFilter.Note => source.Where(e => e.Kind == "note"),
-            VaultFilter.Totp => source.Where(e => e.TotpSecret.Length > 0),
-            _ => source,
-        };
-
         if (query != null)
         {
             source = source.Where(e => Matches(e, query));
@@ -180,54 +170,6 @@ public sealed partial class PasswordWindow
     private void OnClearFilters(object sender, RoutedEventArgs e)
     {
         SearchBox.Text = "";
-        _filter = VaultFilter.All;
-        RefreshList(null);
-        UpdateFilterChips(animate: true);
-    }
-
-    private void OnFilterClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { Tag: string tag }
-            && Enum.TryParse<VaultFilter>(tag, out var result)
-            && _filter != result)
-        {
-            _filter = result;
-            RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
-            // RefreshList 不碰分段控件，滑块动画在这里单独发起，避免被直接落位打断。
-            UpdateFilterChips(animate: true);
-        }
-    }
-
-    private void UpdateFilterChips(bool animate)
-    {
-        SetSegmentActive(FilterAllButton, _filter == VaultFilter.All);
-        SetSegmentActive(FilterLoginButton, _filter == VaultFilter.Login);
-        SetSegmentActive(FilterNoteButton, _filter == VaultFilter.Note);
-        SetSegmentActive(FilterTotpButton, _filter == VaultFilter.Totp);
-        LayoutSegmentThumb(animate);
-    }
-
-    private void LayoutSegmentThumb(bool animate)
-    {
-        const double segment = 76.0;
-        double target = segment * (int)_filter;
-        if (!animate)
-        {
-            _thumbX = target;
-            SegThumbTr.TranslateX = target;
-            return;
-        }
-
-        double from = _thumbX;
-        _thumbX = target;
-        Motion.MoveX(SegThumb, SegThumbTr, from, target, 340, Motion.Spring(0.18));
-    }
-
-    private static void SetSegmentActive(Button button, bool active)
-    {
-        button.Foreground = (Brush)Application.Current.Resources[
-            active ? "TextFillColorPrimaryBrush" : "TextFillColorSecondaryBrush"];
-        button.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
     }
 
     private void OnSortByUpdated(object sender, RoutedEventArgs e) => SetSort(VaultSort.Updated);
@@ -266,7 +208,7 @@ public sealed partial class PasswordWindow
             return;
         }
 
-        var paneOpen = _editorVisible || GeneratorPanel.Visibility == Visibility.Visible;
+        var paneOpen = _editorVisible || _selectedId != null;
         var emptyVault = _vault.Data.Entries.Count == 0;
 
         // 空库时列表里没有任何可浏览的东西：整列收起，宽度让给表单/欢迎页。
@@ -284,8 +226,7 @@ public sealed partial class PasswordWindow
                 : _host.Settings.VaultHotkey;
             EmptyHotkeyHint.Text = $"{vaultHotkey} 可随时唤出密码库";
         }
-        // 空库时筛选与排序都无事可做，直接收起（留着只会是一排点不动的灰按钮）。
-        FilterStrip.Visibility = emptyVault ? Visibility.Collapsed : Visibility.Visible;
+        // 空库时排序也无事可做，直接收起。
         SortButton.Visibility = emptyVault ? Visibility.Collapsed : Visibility.Visible;
 
         // 列表为空时给就地提示；只有「筛掉」会出现这个面板（空库整个列表都收起了）。
@@ -296,19 +237,21 @@ public sealed partial class PasswordWindow
         if (!emptyVault && noRows)
         {
             ListEmptyTitle.Text = "没有匹配的条目";
-            ListEmptyHint.Text = "换个关键词，或切换上方的筛选。";
+            ListEmptyHint.Text = "换个关键词再试。";
             ListEmptyIcon.Glyph = "\uE721";
             ListEmptyClearButton.Visibility = Visibility.Visible;
         }
 
+        // 三态：编辑态（表单）→ 详情态（只读名片）→ 引导占位。
         DetailPane.Visibility = paneOpen ? Visibility.Visible : Visibility.Collapsed;
         EditorRoot.Visibility = _editorVisible ? Visibility.Visible : Visibility.Collapsed;
+        DetailView.Visibility = !_editorVisible && _selectedId != null ? Visibility.Visible : Visibility.Collapsed;
+        // 详情/编辑共用一个头部：「编辑」按钮只在详情态出现。
+        EditButton.Visibility = !_editorVisible && _selectedId != null ? Visibility.Visible : Visibility.Collapsed;
         DetailPlaceholder.Visibility = !paneOpen && !emptyVault ? Visibility.Visible : Visibility.Collapsed;
 
         // 还没保存进库的草稿没有「删除」可言，垃圾桶留着只会诱导误点。
-        DeleteButton.Visibility = _editorVisible && _editingExisting
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        DeleteButton.Visibility = _editingExisting ? Visibility.Visible : Visibility.Collapsed;
         EditorActionBar.Visibility = _editorVisible ? Visibility.Visible : Visibility.Collapsed;
     }
 }

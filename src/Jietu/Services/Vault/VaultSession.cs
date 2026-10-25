@@ -173,7 +173,20 @@ public sealed partial class VaultSession : IDisposable
         ClassifyCurrentFile(createCorruptBackup: false);
         if (Exists)
         {
-            throw new InvalidOperationException(VaultMessages.CreateBlockedByExistingVault);
+            var read = VaultStore.Read(_vaultPath);
+            if (read.Kind == VaultFileKind.LegacyV1)
+            {
+                // 开发期：v1 旧库没有真实用户，直接让用户重建。
+                // 但仍**改名留档**而不是覆盖或删除——成本是一次 File.Move，
+                // 收益是"任何情况下都不出现不可恢复的数据销毁"这条底线不被打破。
+                var orphan = _vaultPath + ".v1-orphan-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                File.Move(_vaultPath, orphan, overwrite: true);
+                Log.Info($"密码库：创建新库前把 v1 旧文件改名留档 → {Path.GetFileName(orphan)}");
+            }
+            else
+            {
+                throw new InvalidOperationException(VaultMessages.CreateBlockedByExistingVault);
+            }
         }
 
         ValidateMasterPassword(masterPassword);
@@ -643,14 +656,14 @@ public sealed partial class VaultSession : IDisposable
         switch (result.Status)
         {
             case VaultOpenStatus.LegacyFormat:
-                // 硬约束：v1 零写盘。这里既不备份也不改名，连日志都不写文件。
-                _state = VaultState.Blocked;
-                _block = new VaultBlockInfo(
-                    VaultBlockKind.LegacyV1, _vaultPath, bytes, VaultMessages.BlockLegacyBody(_vaultPath));
-                Log.Info($"密码库：v1 旧库被拒绝，路径={_vaultPath}，字节={bytes}");
-                return new VaultUnlockOutcome(
-                    false, result.Status, VaultMessages.BlockLegacyTitle, VaultMessages.BlockLegacyBody(_vaultPath),
-                    VaultMessages.BlockLegacyHint, VaultBlockKind.LegacyV1);
+                // 开发期决策：密码库尚未发布，v1 时代只有开发者自测数据，没有真实用户。
+                // 因此不做迁移、不做阻断——直接当作"还没有库"，让用户走创建流程。
+                // 原文件在 CreateAsync 里改名留档（.v1-orphan-<时间戳>），不删除：
+                // "不销毁"比"覆盖"只贵一次 File.Move，但省掉整类"手滑丢数据"的事故。
+                _state = VaultState.Missing;
+                _block = VaultBlockInfo.None;
+                Log.Info($"密码库：检测到 v1 旧库，按未初始化处理（创建时改名留档）。路径={_vaultPath}，字节={bytes}");
+                return null;
 
             case VaultOpenStatus.NewerFormat:
                 _state = VaultState.Blocked;

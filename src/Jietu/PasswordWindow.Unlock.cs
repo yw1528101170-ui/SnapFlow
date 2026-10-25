@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Diagnostics;
 using Microsoft.UI;
 using Microsoft.UI.Input;
@@ -7,6 +8,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.System;
 using Windows.UI;
 using Windows.UI.Core;
@@ -30,7 +32,6 @@ public sealed partial class PasswordWindow
         LockPill.Visibility = Visibility.Collapsed;
         ApplyWindowSize();
         RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
-        UpdateFilterChips(animate: false);
     }
 
     private void ShowUnlockPanel()
@@ -39,7 +40,6 @@ public sealed partial class PasswordWindow
         UnlockPanel.Visibility = Visibility.Visible;
         LockPill.Visibility = Visibility.Visible;
         CountBadge.Visibility = Visibility.Collapsed;
-        StopTotpTimer();
         // 锁定/关闭后编辑器里的明文与列表行都不能残留。
         ClearEditor();
         EntryList.ItemsSource = null;
@@ -52,6 +52,10 @@ public sealed partial class PasswordWindow
             ? "本机加密存储 · 主密码丢失后无法找回"
             : "首次设置 · 主密码只在本机校验，不上传任何服务器";
         ConfirmFieldShell.Visibility = exists ? Visibility.Collapsed : Visibility.Visible;
+        // 创建态两枚输入框连成一个圆角组：上壳去底圆角、下壳上移 1px 盖住接缝。
+        // 解锁态只有主密码一枚，恢复完整圆角与零偏移。
+        MasterFieldShell.CornerRadius = exists ? new CornerRadius(9) : new CornerRadius(9, 9, 0, 0);
+        ConfirmFieldShell.Margin = exists ? new Thickness(0) : new Thickness(0, -1, 0, 0);
         StrengthPanel.Visibility = exists ? Visibility.Collapsed : Visibility.Visible;
         MatchHint.Visibility = Visibility.Collapsed;
         CreateWarning.Visibility = exists ? Visibility.Collapsed : Visibility.Visible;
@@ -65,6 +69,9 @@ public sealed partial class PasswordWindow
         CapsHint.Visibility = Visibility.Collapsed;
         MasterBox.Password = "";
         ConfirmBox.Password = "";
+        // 首次显示创建态时 PasswordChanged 不会触发（密码本来就是空），
+        // 必须手动刷一次，否则强度条只剩轨道线、要求清单整块空白。
+        UpdateCreateStrength();
 
         // 旧库/过新/损坏的库在这里换成阻断卡：输入密码没有意义，但路径与恢复入口必须给到。
         RefreshBlockCard();
@@ -98,6 +105,8 @@ public sealed partial class PasswordWindow
         var lengthOk = password.Length >= 12;
         var mixedOk = classes >= 3 && password.Length >= 8;
 
+        // 空密码时藏掉进度条：0% 只剩一条轨道线，看着像多余的分割线。
+        SetVisibleWithFade(StrengthBar, password.Length != 0);
         StrengthBar.Value = Math.Min(bits, 100);
         (var label, var color) = (bits, lengthOk && mixedOk) switch
         {
@@ -114,15 +123,83 @@ public sealed partial class PasswordWindow
             ? "开始输入以评估强度"
             : $"约 {bits:F0} bit 熵 · {password.Length} 个字符";
 
-        ReqLength.Text = (lengthOk ? "✓ " : "✕ ") + "至少 12 个字符";
-        ReqMixed.Text = (mixedOk ? "✓ " : "✕ ") + "混合大小写、数字或符号更安全";
+        // 全部满足后收起清单，把版面让给下一步（不满足时再淡入回来）。
+        var allOk = lengthOk && mixedOk;
+        SetVisibleWithFade(StrengthReqs, !allOk);
+
         var okBrush = new SolidColorBrush(Colors.MediumSeaGreen);
         var todoBrush = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"];
-        ReqLength.Foreground = lengthOk ? okBrush : todoBrush;
-        ReqMixed.Foreground = mixedOk ? okBrush : todoBrush;
+        var doneTextBrush = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+        ReqLength.Text = "至少 12 个字符";
+        ReqMixed.Text = "混合大小写、数字或符号更安全";
+        (ReqLengthIcon.Glyph, ReqLengthIcon.Foreground) = lengthOk
+            ? ("\uE73E", okBrush)
+            : ("\uE711", todoBrush);
+        ReqLength.Foreground = lengthOk ? doneTextBrush : todoBrush;
+        (ReqMixedIcon.Glyph, ReqMixedIcon.Foreground) = mixedOk
+            ? ("\uE73E", okBrush)
+            : ("\uE711", todoBrush);
+        ReqMixed.Foreground = mixedOk ? doneTextBrush : todoBrush;
 
         UpdateMatchHint();
     }
+
+    /// <summary>
+    /// 显隐 + 淡入淡出。用 Storyboard 而不是 ElementCompositionPreview 隐式动画：
+    /// 后者在 WinUI 3.2 上切换 Visibility 时会触发 stowed exception 直接崩掉进程。
+    /// 淡出结束后才真正折叠布局；淡入从当前透明度续到 1，中途反向不打断闪跳。
+    /// </summary>
+    private void SetVisibleWithFade(UIElement element, bool show)
+    {
+        if (_fadeBoards.TryGetValue(element, out var running))
+        {
+            running.Stop();
+            _fadeBoards.Remove(element);
+        }
+
+        double from;
+        if (show)
+        {
+            from = element.Visibility == Visibility.Visible ? element.Opacity : 0;
+            element.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            if (element.Visibility == Visibility.Collapsed)
+            {
+                return;
+            }
+
+            from = element.Opacity;
+        }
+
+        var anim = new DoubleAnimation
+        {
+            From = from,
+            To = show ? 1 : 0,
+            Duration = new Duration(TimeSpan.FromMilliseconds(show ? 160 : 120)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        };
+        if (!show)
+        {
+            anim.Completed += (_, _) =>
+            {
+                element.Visibility = Visibility.Collapsed;
+                element.Opacity = 1;
+                _fadeBoards.Remove(element);
+            };
+        }
+
+        Storyboard.SetTarget(anim, element);
+        Storyboard.SetTargetProperty(anim, "Opacity");
+        var board = new Storyboard();
+        board.Children.Add(anim);
+        _fadeBoards[element] = board;
+        board.Begin();
+    }
+
+    /// <summary>每个元素同时只跑一条淡入淡出，重入时停掉旧的。</summary>
+    private readonly Dictionary<UIElement, Storyboard> _fadeBoards = new();
 
     private void UpdateMatchHint()
     {
@@ -133,11 +210,11 @@ public sealed partial class PasswordWindow
 
         if (ConfirmBox.Password.Length == 0)
         {
-            MatchHint.Visibility = Visibility.Collapsed;
+            SetVisibleWithFade(MatchHint, false);
             return;
         }
 
-        MatchHint.Visibility = Visibility.Visible;
+        SetVisibleWithFade(MatchHint, true);
         if (MasterBox.Password == ConfirmBox.Password)
         {
             MatchHint.Text = "✓ 两次输入一致";

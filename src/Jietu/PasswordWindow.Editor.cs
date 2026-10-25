@@ -24,9 +24,9 @@ public sealed partial class PasswordWindow
         }
 
         _vault.TouchActivity();
-        // 列表刷新（搜索/排序）会重设选中项：同一条目已在编辑时不再重载，
-        // 否则未保存的修改会被库里旧值覆盖。
-        if (row.Id == _selectedId && _editorVisible)
+        // 列表刷新（搜索/排序）会重设选中项：同一条目不再重载，
+        // 否则未保存的修改会被库里旧值覆盖、详情态的显示态也会被打断。
+        if (row.Id == _selectedId)
         {
             return;
         }
@@ -38,59 +38,136 @@ public sealed partial class PasswordWindow
             return;
         }
 
-        LoadEditor(entry);
+        ShowDetail(entry);
     }
 
-    private void OnKindChanged(object sender, SelectionChangedEventArgs e)
+    /// <summary>
+    /// 详情态（只读名片）：点列表条目 / 保存后进入。编辑器字段同步填充，
+    /// 这样字段行上的复制按钮在两种模式下都能取到当前值。
+    /// </summary>
+    private void ShowDetail(VaultEntry entry)
     {
-        if (!_xamlReady)
+        FillEditorFields(entry);
+        _editorVisible = false;
+        HideDetailReveal();
+        FillDetailView(entry);
+        MarkEditorClean();
+        SyncLayout();
+        DetailPane.ChangeView(null, 0, null, true);
+    }
+
+    /// <summary>详情态 → 编辑态：字段已在 ShowDetail 时填充，这里从库里再取一次保证干净。</summary>
+    private void OnEditEntry(object sender, RoutedEventArgs e)
+    {
+        if (_selectedId == null)
         {
             return;
         }
 
-        CredentialFields.Visibility = IsNoteKind ? Visibility.Collapsed : Visibility.Visible;
-        // 笔记没有凭据，复制密码/用户名两个按钮留着只会误导。
-        var credentialButtons = IsNoteKind ? Visibility.Collapsed : Visibility.Visible;
-        CopyPasswordButton.Visibility = credentialButtons;
-        CopyUsernameButton.Visibility = credentialButtons;
-
-        // 草稿的副标题跟着类型走（已有条目显示的是「上次修改 …」，不该被覆盖）。
-        if (_editorVisible && !_editingExisting)
+        var entry = _vault.Data?.Entries.FirstOrDefault(en => en.Id == _selectedId);
+        if (entry == null)
         {
-            DetailMeta.Text = IsNoteKind ? "草稿 · 安全笔记，尚未保存" : "草稿 · 登录凭据，尚未保存";
+            return;
         }
+
+        FillEditorFields(entry);
+        _editorVisible = true;
+        HideReveal();
+        MarkEditorClean();
+        SyncLayout();
+        DetailPane.ChangeView(null, 0, null, true);
+        TitleBox.Focus(FocusState.Programmatic);
     }
 
-    private void LoadEditor(VaultEntry entry)
+    /// <summary>编辑态 → 详情态（已有条目）或直接收起（草稿）。</summary>
+    private void OnCancelEdit(object sender, RoutedEventArgs e)
+    {
+        if (_editingExisting && _selectedId != null)
+        {
+            var entry = _vault.Data?.Entries.FirstOrDefault(en => en.Id == _selectedId);
+            if (entry != null)
+            {
+                ShowDetail(entry);
+                return;
+            }
+        }
+
+        ClearEditor();
+        RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+    }
+
+    /// <summary>填充编辑器字段与共享头（不含模式切换）。</summary>
+    private void FillEditorFields(VaultEntry entry)
     {
         _editorLoading = true;
-        _editorVisible = true;
         var title = DisplayTitle(entry.Title);
         var avatar = AvatarFor(title);
         DetailHeader.Text = title;
         DetailInitial.Text = avatar.Initial;
         DetailInitial.Foreground = avatar.Foreground;
-        DetailMeta.Text = $"上次修改 {entry.UpdatedUtc.ToLocalTime():yyyy-MM-dd HH:mm}"
-                          + (entry.Kind == "note" ? " · 安全笔记" : " · 登录");
+        DetailMeta.Text = $"上次修改 {entry.UpdatedUtc.ToLocalTime():yyyy-MM-dd HH:mm}";
         _editingExisting = true;
-        KindCombo.SelectedIndex = entry.Kind == "note" ? 1 : 0;
         TitleBox.Text = entry.Title;
         UsernameBox.Text = entry.Username;
         PasswordBox.Password = entry.Password;
         PasswordTextBox.Text = entry.Password;
         UrlBox.Text = entry.Url;
-        TagsBox.Text = string.Join(", ", entry.Tags);
         NotesBox.Text = entry.Notes;
-        // TOTP 输入框显示 otpauth URI 或 Base32；note 类型不显示。
-        TotpBox.Text = entry.TotpSecret;
-        TotpDisplayRow.Visibility = string.IsNullOrEmpty(entry.TotpSecret) ? Visibility.Collapsed : Visibility.Visible;
-        UpdateTotpDisplay();
-        StartTotpTimer();
         _editorLoading = false;
-        MarkEditorClean();
-        SyncLayout();
-        DetailPane.ChangeView(null, 0, null, true);
     }
+
+    /// <summary>填充只读名片：字段值 + 空字段整行隐藏 + 末行去掉分隔线。</summary>
+    private void FillDetailView(VaultEntry entry)
+    {
+        DetailUsername.Text = entry.Username;
+        DetailUserRow.Visibility = entry.Username.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        DetailPasswordValue.Text = "••••••••";
+        DetailPasswordRow.Visibility = entry.Password.Length == 0 && entry.Kind == "note"
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        DetailUrlValue.Text = entry.Url;
+        DetailUrlRow.Visibility = entry.Url.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        DetailNotes.Text = entry.Notes;
+        DetailNotesRow.Visibility = entry.Notes.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+
+        // 发丝分隔线挂在每行底边：把最后一个可见行的底线收掉，避免卡片底部出现孤线。
+        var rows = new[] { DetailUserRow, DetailPasswordRow, DetailUrlRow, DetailNotesRow };
+        Border? last = null;
+        foreach (var row in rows)
+        {
+            if (row.Visibility == Visibility.Visible)
+            {
+                last = row;
+            }
+        }
+
+        foreach (var row in rows)
+        {
+            row.BorderThickness = row == last ? new Thickness(0) : new Thickness(0, 0, 0, 1);
+        }
+    }
+
+    private void OnToggleDetailReveal(object sender, RoutedEventArgs e)
+    {
+        if (_detailRevealed)
+        {
+            HideDetailReveal();
+            return;
+        }
+
+        _detailRevealed = true;
+        DetailPasswordValue.Text = CurrentPassword;
+        DetailRevealButton.Content = "隐藏";
+    }
+
+    private void HideDetailReveal()
+    {
+        _detailRevealed = false;
+        DetailPasswordValue.Text = "••••••••";
+        DetailRevealButton.Content = "显示";
+    }
+
+    private void OnCopyDetailUrl(object sender, RoutedEventArgs e) => CopySecret(UrlBox.Text, "网址");
 
     private void ClearEditor()
     {
@@ -101,18 +178,13 @@ public sealed partial class PasswordWindow
         DetailHeader.Text = "条目详情";
         DetailInitial.Text = "";
         DetailMeta.Text = "";
-        KindCombo.SelectedIndex = 0;
         TitleBox.Text = "";
         UsernameBox.Text = "";
         PasswordBox.Password = "";
         PasswordTextBox.Text = "";
         UrlBox.Text = "";
-        TotpBox.Text = "";
-        TagsBox.Text = "";
         NotesBox.Text = "";
-        TotpDisplayRow.Visibility = Visibility.Collapsed;
         HideReveal();
-        StopTotpTimer();
         _editorLoading = false;
         MarkEditorClean();
         SyncLayout();
@@ -146,40 +218,26 @@ public sealed partial class PasswordWindow
 
     private string EditorSignature() => string.Join(
         '\u0001',
-        KindCombo.SelectedIndex.ToString(),
         TitleBox.Text,
         UsernameBox.Text,
         CurrentPassword,
         UrlBox.Text,
-        TotpBox.Text,
-        TagsBox.Text,
         NotesBox.Text);
 
     private VaultEntry CollectEditor()
     {
-        var tags = TagsBox.Text
-            .Split([',', '，'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var secret = TotpBox.Text.Trim();
-        if (secret.StartsWith("otpauth://", StringComparison.OrdinalIgnoreCase))
-        {
-            secret = Totp.SecretFromOtpAuthUri(secret) ?? "";
-        }
-
         var now = DateTimeOffset.UtcNow;
-        var note = IsNoteKind;
         return new VaultEntry
         {
             Id = _editingExisting && _selectedId != null ? _selectedId : Guid.NewGuid().ToString("N"),
-            Kind = note ? "note" : "login",
+            Kind = "login",
             Title = TitleBox.Text.Trim(),
             // 「显示密码」态下明文在 TextBox 里，PasswordBox 是旧的，取可见的那个。
-            Username = note ? "" : UsernameBox.Text.Trim(),
-            Password = note ? "" : (PasswordBox.Visibility == Visibility.Visible ? PasswordBox.Password : PasswordTextBox.Text),
-            Url = note ? "" : UrlBox.Text.Trim(),
-            TotpSecret = note ? "" : secret,
-            Tags = tags,
+            Username = UsernameBox.Text.Trim(),
+            Password = PasswordBox.Visibility == Visibility.Visible ? PasswordBox.Password : PasswordTextBox.Text,
+            Url = UrlBox.Text.Trim(),
+            TotpSecret = "",
+            Tags = [],
             Notes = NotesBox.Text,
             CreatedUtc = now,
             UpdatedUtc = now,
@@ -200,7 +258,7 @@ public sealed partial class PasswordWindow
         _editorVisible = true;
         DetailHeader.Text = "新建条目";
         DetailInitial.Text = "+";
-        DetailMeta.Text = IsNoteKind ? "草稿 · 安全笔记，尚未保存" : "草稿 · 登录凭据，尚未保存";
+        DetailMeta.Text = "草稿 · 尚未保存";
         SyncLayout();
         DetailPane.ChangeView(null, 0, null, true);
         TitleBox.Focus(FocusState.Programmatic);
@@ -245,13 +303,7 @@ public sealed partial class PasswordWindow
             _vault.RequestSave();
             _host.Toast.Show("已保存");
             _selectedId = entry.Id;
-            _editingExisting = true;
-            var title = DisplayTitle(entry.Title);
-            DetailHeader.Text = title;
-            DetailInitial.Text = AvatarFor(title).Initial;
-            DetailMeta.Text = $"上次修改 {entry.UpdatedUtc.ToLocalTime():yyyy-MM-dd HH:mm}"
-                              + (entry.Kind == "note" ? " · 安全笔记" : " · 登录");
-            MarkEditorClean();
+            ShowDetail(entry);
             RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
         }
         catch (Exception ex)
@@ -261,19 +313,25 @@ public sealed partial class PasswordWindow
         }
     }
 
-    private void OnDeleteEntry(object sender, RoutedEventArgs e)
+    private async void OnDeleteEntry(object sender, RoutedEventArgs e)
     {
         if (!_vault.IsUnlocked || _selectedId == null)
         {
             return;
         }
 
-        var res = NativeMethods.MessageBox(
-            WinRT.Interop.WindowNative.GetWindowHandle(this),
-            $"把这个条目移到回收站？\n\n可以在「更多 → 回收站」里恢复；超过 {VaultLimits.TrashRetainDays} 天或超过 {VaultLimits.TrashMaxEntries} 条时会自动清理。",
-            "SnapFlow - 移到回收站",
-            NativeMethods.MbYesNo | NativeMethods.MbIconQuestion | NativeMethods.MbDefButton2);
-        if (res != NativeMethods.IdYes)
+        var entry = _vault.Data?.Entries.FirstOrDefault(en => en.Id == _selectedId);
+        if (entry == null)
+        {
+            return;
+        }
+
+        var confirmed = await ShowAppConfirmAsync(
+            "移到回收站",
+            $"把「{DisplayTitle(entry.Title)}」移到回收站？\n可以在「更多 → 回收站」里恢复；"
+            + $"超过 {VaultLimits.TrashRetainDays} 天或超过 {VaultLimits.TrashMaxEntries} 条时会自动清理。",
+            "移到回收站");
+        if (!confirmed)
         {
             return;
         }
@@ -403,7 +461,7 @@ public sealed partial class PasswordWindow
     private void OnAccDelete(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
         args.Handled = true;
-        if (!_vault.IsUnlocked || !_editorVisible || _selectedId == null)
+        if (!_vault.IsUnlocked || _selectedId == null)
         {
             return;
         }

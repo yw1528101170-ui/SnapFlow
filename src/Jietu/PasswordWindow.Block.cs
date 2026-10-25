@@ -86,7 +86,7 @@ public sealed partial class PasswordWindow
     }
 
     /// <summary>
-    /// 「我已移走旧库，重试」：重新分类。用户把旧文件挪走后这里会直接进创建流程，
+    /// 「重新检测」：重新读盘分类。用户移走/替换文件后不必重启程序。
     /// 我们**不**替用户删除或改名任何文件。
     /// </summary>
     private void OnRetryAfterMove(object sender, RoutedEventArgs e)
@@ -98,7 +98,7 @@ public sealed partial class PasswordWindow
         }
         else
         {
-            _host.Toast.Show("库文件仍在原处，请先把它移走后重试");
+            _host.Toast.Show("文件仍然无法打开，请查看上方说明");
         }
     }
 

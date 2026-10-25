@@ -150,4 +150,111 @@ public static class BrowserIntegration
             return null;
         }
     }
+
+    /// <summary>
+    /// 计算「加载已解压的扩展程序」对应的扩展 ID：Chromium 用扩展文件夹绝对路径的
+    /// SHA-256（UTF-16LE 编码）前 128 位，把十六进制字符映射到 a–p 字母表。
+    /// 桌面端和浏览器加载的是同一个文件夹时结果一致，因此可以代替手工复制 ID。
+    /// </summary>
+    public static string ComputeUnpackedExtensionId(string folderPath)
+    {
+        var fullPath = Path.GetFullPath(folderPath.TrimEnd('\\', '/'));
+        var hash = System.Security.Cryptography.SHA256.HashData(Encoding.Unicode.GetBytes(fullPath));
+        var chars = new char[32];
+        for (var i = 0; i < 32; i++)
+        {
+            var nibble = (hash[i / 2] >> (i % 2 == 0 ? 4 : 0)) & 0xF;
+            chars[i] = (char)('a' + nibble);
+        }
+
+        return new string(chars);
+    }
+
+    /// <summary>
+    /// 定位扩展文件夹：安装目录或开发仓库根下的 ext/snapflow-vault。
+    /// 从 exe 所在目录逐级向上找，两种布局都能覆盖；找不到返回 null。
+    /// </summary>
+    public static string? FindExtensionFolder()
+    {
+        for (var dir = new DirectoryInfo(Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory)); dir != null; dir = dir.Parent)
+        {
+            try
+            {
+                var candidate = Path.Combine(dir.FullName, "ext", "snapflow-vault");
+                if (File.Exists(Path.Combine(candidate, "manifest.json")))
+                {
+                    return candidate;
+                }
+            }
+            catch
+            {
+                // 逐级向上探测遇到无权限目录就跳过。
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>本机已安装的 Chromium 浏览器（Chrome / Edge），供一键安装引导。</summary>
+    public sealed record DetectedBrowser(string Id, string Name, string ExePath, string ExtensionsUrl);
+
+    public static DetectedBrowser[] DetectBrowsers()
+    {
+        var list = new List<DetectedBrowser>();
+        var chrome = FindBrowserExe("chrome.exe");
+        if (chrome != null)
+        {
+            list.Add(new DetectedBrowser("chrome", "Google Chrome", chrome, "chrome://extensions"));
+        }
+
+        var edge = FindBrowserExe("msedge.exe");
+        if (edge != null)
+        {
+            list.Add(new DetectedBrowser("edge", "Microsoft Edge", edge, "edge://extensions"));
+        }
+
+        return [.. list];
+    }
+
+    private static string? FindBrowserExe(string exeName)
+    {
+        foreach (var root in new[]
+                 {
+                     @"Software\Microsoft\Windows\CurrentVersion\App Paths\" + exeName,
+                     @"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\" + exeName,
+                 })
+        {
+            try
+            {
+                using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(root)
+                                ?? Microsoft.Win32.Registry.LocalMachine.OpenSubKey(root);
+                if (key?.GetValue(null) is string path && File.Exists(path))
+                {
+                    return path;
+                }
+            }
+            catch
+            {
+                // 注册表探测失败就换下一个来源。
+            }
+        }
+
+        // Edge 是 Windows 系统组件，注册表缺失时兜底常规安装路径。
+        if (exeName.Equals("msedge.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var path in new[]
+                     {
+                         @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                         @"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+                     })
+            {
+                if (File.Exists(path))
+                {
+                    return path;
+                }
+            }
+        }
+
+        return null;
+    }
 }

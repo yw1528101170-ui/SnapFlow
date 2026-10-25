@@ -41,15 +41,11 @@ public sealed partial class PasswordWindow
             var rows = VaultImportExport.ParseCsv(text);
 
             // 上限校验必须在写入之前，且是**整体拒绝**：任何一条不合格就一条都不写。
-            // 用 MessageBox 而不是 Toast——这段文案要用户读明白"一条都没导进去"。
+            // 用对话框而不是 Toast——这段文案要用户读明白"一条都没导进去"。
             var limitError = VaultImportExport.ValidateImportRows(rows);
             if (limitError != null)
             {
-                NativeMethods.MessageBox(
-                    WinRT.Interop.WindowNative.GetWindowHandle(this),
-                    limitError,
-                    "SnapFlow - 导入未执行",
-                    NativeMethods.MbOk | NativeMethods.MbIconWarning);
+                await ShowAppConfirmAsync("导入未执行", limitError, null);
                 return;
             }
 
@@ -239,12 +235,11 @@ public sealed partial class PasswordWindow
             return;
         }
 
-        var res = NativeMethods.MessageBox(
-            WinRT.Interop.WindowNative.GetWindowHandle(this),
-            "即将导出包含全部密码明文的 CSV 文件。\n\n任何拿到这个文件的人都能直接读出所有密码，请确认存放位置安全。",
-            "SnapFlow - 明文导出",
-            NativeMethods.MbOkCancel | NativeMethods.MbIconQuestion | NativeMethods.MbDefButton2);
-        if (res != NativeMethods.IdOk)
+        if (!await ShowAppConfirmAsync(
+                "明文导出",
+                "即将导出包含全部密码明文的 CSV 文件。\n任何拿到这个文件的人都能直接读出所有密码，请确认存放位置安全。",
+                "仍要导出",
+                danger: true))
         {
             return;
         }

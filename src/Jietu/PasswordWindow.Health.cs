@@ -256,14 +256,14 @@ public sealed partial class PasswordWindow
 
         var purge = new Button { Content = "彻底删除", FontSize = 12, Height = 28 };
         Grid.SetColumn(purge, 2);
-        purge.Click += (_, _) =>
+        purge.Click += async (_, _) =>
         {
-            var confirm = NativeMethods.MessageBox(
-                WinRT.Interop.WindowNative.GetWindowHandle(this),
+            var confirm = await ShowAppConfirmAsync(
+                "彻底删除",
                 $"彻底删除「{DisplayTitle(entry.Title)}」？这个操作不可恢复。",
-                "SnapFlow - 彻底删除",
-                NativeMethods.MbYesNo | NativeMethods.MbIconWarning | NativeMethods.MbDefButton2);
-            if (confirm != NativeMethods.IdYes)
+                "彻底删除",
+                danger: true);
+            if (!confirm)
             {
                 return;
             }
