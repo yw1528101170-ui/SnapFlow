@@ -46,6 +46,7 @@ public sealed partial class SettingsWindow : Window
         ["Clipboard"] = ("剪贴板历史", "保留期限与隐私过滤"),
         ["Osd"] = ("性能监视器", "屏幕悬浮挂件 OSD"),
         ["Ai"] = ("AI 视觉配置", "多模态模型接入"),
+        ["Vault"] = ("密码库", "本地加密凭据与自动填充"),
         ["About"] = ("关于 SnapFlow", "版本信息与开源许可"),
     };
 
@@ -119,6 +120,7 @@ public sealed partial class SettingsWindow : Window
             AiPromptBox.Text = string.IsNullOrWhiteSpace(settings.AiPrompt) ? AppSettings.DefaultAiPrompt : settings.AiPrompt;
             AiEconomySwitch.IsOn = settings.AiDetailLow;
             UpdateAiBadges();
+            RefreshVaultSection();
 
             _ignoredProcesses.Clear();
             _ignoredProcesses.AddRange(settings.IgnoredProcesses);
@@ -551,6 +553,10 @@ public sealed partial class SettingsWindow : Window
         {
             RegionHotkey = _regionHotkey.Trim(),
             HistoryHotkey = _historyHotkey.Trim(),
+            // 密码库热键暂不在设置页录制（复用主窗口托盘配置）；原样携带避免被整体替换吞掉。
+            VaultHotkey = _host.Settings.VaultHotkey,
+            VaultLockMinutes = VaultLockBox.SelectedItem is ComboBoxItem lockItem && int.TryParse(lockItem.Tag?.ToString(), out var lockMinutes) ? lockMinutes : 5,
+            VaultBrowserIntegration = VaultBrowserSwitch.IsOn,
             RetentionDays = (int)Math.Clamp(Math.Round(retention), AppSettings.MinRetentionDays, AppSettings.MaxRetentionDays),
             Paused = _host.IsPaused,
             RunAtStartup = StartupSwitch.IsOn,
@@ -586,6 +592,100 @@ public sealed partial class SettingsWindow : Window
     private void OnAiSettingChanged(object sender, RoutedEventArgs e)
     {
         UpdateAiBadges();
+        if (_loading) return;
+        ApplyAndSave();
+    }
+
+    // ---------------- 密码库设置 ----------------
+
+    /// <summary>从会话实时取状态（打开/锁定随时可能变化，每次进页都刷新）。</summary>
+    private void RefreshVaultSection()
+    {
+        if (VaultStatusText is null)
+        {
+            return;
+        }
+
+        var vault = _host.Vault;
+        var minutes = _host.Settings.VaultLockMinutes;
+        VaultLockBox.SelectedIndex = minutes switch
+        {
+            <= 1 => 0,
+            <= 5 => 1,
+            <= 15 => 2,
+            <= 30 => 3,
+            <= 60 => 4,
+            _ => 5,
+        };
+        VaultBrowserSwitch.IsOn = _host.Settings.VaultBrowserIntegration;
+
+        if (!vault.Exists)
+        {
+            VaultStatusText.Text = "未创建（打开后按引导设置主密码）";
+            VaultOpenButton.Content = "创建密码库";
+            VaultHelloButton.IsEnabled = false;
+            VaultHelloText.Text = "创建并解锁密码库后可启用";
+            return;
+        }
+
+        if (vault.IsUnlocked)
+        {
+            VaultStatusText.Text = $"已解锁 · {vault.Data!.Entries.Count} 个条目";
+            VaultOpenButton.Content = "打开密码库";
+            VaultHelloButton.IsEnabled = !vault.HasHelloBlob;
+            VaultHelloText.Text = vault.HasHelloBlob ? "已启用（锁定时自动失效，解锁后自动恢复）" : "用指纹/PIN 免输主密码";
+        }
+        else
+        {
+            VaultStatusText.Text = "已锁定";
+            VaultOpenButton.Content = "打开密码库";
+            VaultHelloButton.IsEnabled = false;
+            VaultHelloText.Text = vault.HasHelloBlob ? "解锁密码库后可用" : "解锁密码库后即可启用";
+        }
+    }
+
+    private void OnOpenVault(object sender, RoutedEventArgs e)
+    {
+        _host.ToggleVault();
+        Dismiss();
+    }
+
+    private async void OnEnableHello(object sender, RoutedEventArgs e)
+    {
+        var vault = _host.Vault;
+        if (!vault.IsUnlocked)
+        {
+            ShowError("请先解锁密码库再启用快速解锁。");
+            return;
+        }
+
+        VaultHelloButton.IsEnabled = false;
+        try
+        {
+            if (!await vault.EnableHelloAsync())
+            {
+                ShowError("启用快速解锁失败：可能已在系统弹窗中取消。");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+            ShowError("启用快速解锁失败：" + ex.Message);
+        }
+        finally
+        {
+            RefreshVaultSection();
+        }
+    }
+
+    private void OnVaultLockChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        ApplyAndSave();
+    }
+
+    private void OnVaultBrowserToggled(object sender, RoutedEventArgs e)
+    {
         if (_loading) return;
         ApplyAndSave();
     }
@@ -825,6 +925,7 @@ public sealed partial class SettingsWindow : Window
             ("Clipboard", PanelClipboard),
             ("Osd", PanelOsd),
             ("Ai", PanelAi),
+            ("Vault", PanelVault),
             ("About", PanelAbout),
         };
 

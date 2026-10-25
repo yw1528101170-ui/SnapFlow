@@ -22,6 +22,9 @@ internal sealed class TrayController
     private readonly Action _clearHistory;
     private readonly IToastSink _toast;
     private readonly IntPtr _ownerWindow;
+    private readonly Func<bool> _vaultUnlocked;
+    private readonly Action _showVault;
+    private readonly Action _lockVault;
     private long _lastTrayClick;
 
     public TrayController(
@@ -37,7 +40,10 @@ internal sealed class TrayController
         Action shutdown,
         Action clearHistory,
         IToastSink toast,
-        IntPtr ownerWindow)
+        IntPtr ownerWindow,
+        Func<bool> vaultUnlocked,
+        Action showVault,
+        Action lockVault)
     {
         _history = history;
         _pins = pins;
@@ -52,6 +58,9 @@ internal sealed class TrayController
         _clearHistory = clearHistory;
         _toast = toast;
         _ownerWindow = ownerWindow;
+        _vaultUnlocked = vaultUnlocked;
+        _showVault = showVault;
+        _lockVault = lockVault;
     }
 
     public void Handle(uint message, PasteTarget foreground)
@@ -97,7 +106,9 @@ internal sealed class TrayController
             _pins.AnyGhost,
             settings.ShowOsd,
             settings.OsdPosition,
-            settings.OsdDisplay);
+            settings.OsdDisplay,
+            settings.VaultHotkey,
+            _vaultUnlocked());
 
         switch (_tray.ShowMenu(ctx))
         {
@@ -121,6 +132,12 @@ internal sealed class TrayController
                 break;
             case TrayCommand.ShowHistory:
                 _history.Present(foreground);
+                break;
+            case TrayCommand.ShowVault:
+                _showVault();
+                break;
+            case TrayCommand.LockVault:
+                _lockVault();
                 break;
             case TrayCommand.ClearHistory:
                 PromptClearHistory();

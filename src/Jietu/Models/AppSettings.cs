@@ -12,8 +12,14 @@ public sealed class AppSettings
 
     public const string DefaultRegionHotkey = "Alt+A";
     public const string DefaultHistoryHotkey = "Alt+V";
+    public const string DefaultVaultHotkey = "Alt+P";
     public string RegionHotkey { get; set; } = DefaultRegionHotkey;
     public string HistoryHotkey { get; set; } = DefaultHistoryHotkey;
+    /// <summary>密码库空闲自动锁定分钟数；0 表示不按空闲时间锁定（锁屏/睡眠仍会锁）。</summary>
+    public int VaultLockMinutes { get; set; } = 5;
+    /// <summary>是否允许浏览器扩展经本机管道请求凭据（关联确认仍在库内逐个批准）。</summary>
+    public bool VaultBrowserIntegration { get; set; }
+    public string VaultHotkey { get; set; } = DefaultVaultHotkey;
     public int RetentionDays { get; set; } = 30;
     public bool Paused { get; set; }
     public bool RunAtStartup { get; set; }

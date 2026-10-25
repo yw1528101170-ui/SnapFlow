@@ -2,6 +2,11 @@ namespace Jietu;
 
 internal sealed class MessageWindow
 {
+    private const uint WmWtsSessionChange = 0x02B1;
+    private const nint WtsSessionLock = 0x7;
+    private const uint WmPowerBroadcast = 0x0218;
+    private const nint PbtApmSuspend = 0x4;
+
     private readonly NativeMethods.WndProc _proc;
     private readonly Action<int> _hotkey;
     private readonly Action _clipboard;
@@ -11,6 +16,9 @@ internal sealed class MessageWindow
 
     /// <summary>Explorer 崩溃/重启后任务栏重建时触发，订阅方需要按需重新添加托盘图标。</summary>
     public event Action? TaskbarCreated;
+
+    /// <summary>Windows 会话锁定（Win+L）或系统进入睡眠时触发，密码库据此立即锁定。</summary>
+    public event Action? SessionLocked;
 
     public MessageWindow(Action<int> hotkey, Action clipboard, Action<uint> tray)
     {
@@ -53,6 +61,12 @@ internal sealed class MessageWindow
         catch
         {
         }
+
+        // 订阅会话锁定/解锁通知（不订阅 unlock）；失败只影响「锁屏立即锁」这一体验项。
+        if (!WtsRegisterSessionNotification(Handle, 0 /*NOTIFY_FOR_THIS_SESSION*/))
+        {
+            Log.Info("注册会话锁定通知失败，锁屏时密码库将依赖空闲超时锁定。");
+        }
     }
 
     public IntPtr Handle { get; }
@@ -61,9 +75,16 @@ internal sealed class MessageWindow
     {
         if (Handle != IntPtr.Zero)
         {
+            WtsUnRegisterSessionNotification(Handle);
             NativeMethods.DestroyWindow(Handle);
         }
     }
+
+    [System.Runtime.InteropServices.DllImport("wtsapi32.dll")]
+    private static extern bool WtsRegisterSessionNotification(IntPtr hWnd, uint dwFlags);
+
+    [System.Runtime.InteropServices.DllImport("wtsapi32.dll")]
+    private static extern bool WtsUnRegisterSessionNotification(IntPtr hWnd);
 
     private IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
@@ -85,6 +106,14 @@ internal sealed class MessageWindow
             {
                 // Explorer 重启后广播该消息，必须重新 NimAdd，否则托盘图标永久消失。
                 TaskbarCreated?.Invoke();
+            }
+            else if (msg == WmWtsSessionChange && wParam == WtsSessionLock)
+            {
+                SessionLocked?.Invoke();
+            }
+            else if (msg == WmPowerBroadcast && wParam == PbtApmSuspend)
+            {
+                SessionLocked?.Invoke();
             }
         }
         catch (Exception ex)

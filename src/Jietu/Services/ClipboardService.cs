@@ -109,6 +109,98 @@ internal sealed class ClipboardService
         FinishOwn(Hashing.OfText(text));
     }
 
+    /// <summary>
+    /// 写入机密文本（密码库复制的密码/用户名/TOTP）：与 SetText 相同的写入路径，
+    /// 额外挂上全部「请勿收录」标记——本应用的历史、Windows Win+V 历史与云剪贴板
+    /// 都会跳过这条内容。clearSeconds &gt; 0 时倒计时自动清空剪贴板，
+    /// 清空前若用户复制了别的内容（序列号变了）则不动它。
+    /// </summary>
+    public void SetTextSecret(string text, int clearSeconds)
+    {
+        EnsureExclusionFormats();
+        var bytes = Encoding.Unicode.GetBytes(text + "\0");
+        uint sequence = 0;
+        Edit(() =>
+        {
+            NativeMethods.EmptyClipboard();
+            var handle = NativeMethods.AllocBytes(bytes);
+            if (NativeMethods.SetClipboardData(NativeMethods.CfUnicodeText, handle) == IntPtr.Zero)
+            {
+                NativeMethods.GlobalFree(handle);
+                throw new InvalidOperationException("写入文字剪贴板失败。");
+            }
+
+            // 三个标记都是「存在即生效」的约定格式；CanIncludeInClipboardHistory
+            // 带值：DWORD 0 = 明确告知 Windows 剪贴板历史不要收录。
+            Put(_excludeMonitorFormat, [1]);
+            Put(_viewerIgnoreFormat, [1]);
+            Put(_includeHistoryFormat, new byte[4]);
+            sequence = NativeMethods.GetClipboardSequenceNumber();
+        });
+        FinishOwn(Hashing.OfText(text));
+        ScheduleSecretClear(sequence, clearSeconds);
+    }
+
+    // 机密剪贴板的自动清空：单计时器 + 代际序号。再次复制机密内容会顺延并更新序号。
+    private System.Threading.Timer? _secretClearTimer;
+    private uint _secretClearSequence;
+
+    private void ScheduleSecretClear(uint sequence, int clearSeconds)
+    {
+        if (clearSeconds <= 0 || sequence == 0)
+        {
+            return;
+        }
+
+        lock (_clip)
+        {
+            _secretClearSequence = sequence;
+            if (_secretClearTimer != null)
+            {
+                // 复用计时器：重置到期时间即可（DueTime 重新计算）。
+                _secretClearTimer.Change(TimeSpan.FromSeconds(clearSeconds), Timeout.InfiniteTimeSpan);
+                return;
+            }
+
+            _secretClearTimer = new System.Threading.Timer(_ =>
+            {
+                uint expected;
+                lock (_clip)
+                {
+                    expected = _secretClearSequence;
+                }
+
+                try
+                {
+                    // 序列号不一致说明用户已经复制了别的东西，绝不能清掉别人的内容。
+                    if (expected == 0 || NativeMethods.GetClipboardSequenceNumber() != expected)
+                    {
+                        return;
+                    }
+
+                    if (NativeMethods.OpenClipboard(_owner))
+                    {
+                        try
+                        {
+                            if (NativeMethods.GetClipboardSequenceNumber() == expected)
+                            {
+                                NativeMethods.EmptyClipboard();
+                            }
+                        }
+                        finally
+                        {
+                            NativeMethods.CloseClipboard();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Info("自动清空机密剪贴板失败：" + ex.Message);
+                }
+            }, null, TimeSpan.FromSeconds(clearSeconds), Timeout.InfiniteTimeSpan);
+        }
+    }
+
     public void SetImage(byte[] png, byte[] bgra, int width, int height)
     {
         var dib = DibImage.Build(bgra, width, height);

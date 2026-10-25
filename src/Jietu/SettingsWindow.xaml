@@ -365,6 +365,24 @@
 
                 <NavigationViewItemSeparator/>
 
+                <NavigationViewItem x:Name="NavVault" Tag="Vault" AutomationProperties.Name="密码库">
+                    <NavigationViewItem.Content>
+                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <Border Style="{StaticResource NavTileStyle}">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#FF8A8A" Offset="0"/>
+                                        <GradientStop Color="#EF4444" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <FontIcon Glyph="&#xE72E;" FontSize="10" Foreground="White"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock Text="密码库" Style="{StaticResource NavLabelStyle}"/>
+                        </StackPanel>
+                    </NavigationViewItem.Content>
+                </NavigationViewItem>
+
                 <NavigationViewItem x:Name="NavAbout" Tag="About" AutomationProperties.Name="关于 SnapFlow">
                     <NavigationViewItem.Content>
                         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -888,7 +906,89 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- 6. 关于面板：内容块在可视区内垂直居中，避免大片留白 -->
+                <!-- 6. 密码库面板 -->
+                <ScrollViewer x:Name="PanelVault" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="18" MaxWidth="620" HorizontalAlignment="Center">
+                        <StackPanel Spacing="7">
+                            <TextBlock Text="状态" Style="{StaticResource SettingsGroupLabelStyle}"/>
+                            <Border Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <Border Style="{StaticResource RowTileRedStyle}">
+                                            <FontIcon Glyph="&#xE72E;" FontSize="12" Foreground="{ThemeResource RowGlyphRedBrush}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="本地密码库" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                            <TextBlock x:Name="VaultStatusText" Style="{StaticResource SettingsRowHintStyle}"
+                                                       Text="未创建"/>
+                                        </StackPanel>
+                                        <Button x:Name="VaultOpenButton" Grid.Column="2" Content="打开密码库"
+                                                CornerRadius="7" Click="OnOpenVault" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
+                                    <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <Border Style="{StaticResource RowTileBlueStyle}">
+                                            <FontIcon Glyph="&#xE192;" FontSize="12" Foreground="{ThemeResource RowGlyphBlueBrush}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="Windows Hello 快速解锁" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                            <TextBlock x:Name="VaultHelloText" Style="{StaticResource SettingsRowHintStyle}"
+                                                       Text="解锁密码库后即可启用"/>
+                                        </StackPanel>
+                                        <Button x:Name="VaultHelloButton" Grid.Column="2" Content="启用"
+                                                CornerRadius="7" Click="OnEnableHello" VerticalAlignment="Center" IsEnabled="False"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Spacing="7">
+                            <TextBlock Text="安全" Style="{StaticResource SettingsGroupLabelStyle}"/>
+                            <Border Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel>
+                                    <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <Border Style="{StaticResource RowTileAmberStyle}">
+                                            <FontIcon Glyph="&#xE916;" FontSize="12" Foreground="{ThemeResource RowGlyphAmberBrush}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="空闲自动锁定" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                            <TextBlock Style="{StaticResource SettingsRowHintStyle}"
+                                                       Text="无操作超过该时长后锁定密码库；锁屏与睡眠总是立即锁定"/>
+                                        </StackPanel>
+                                        <ComboBox x:Name="VaultLockBox" Grid.Column="2" MinWidth="130" CornerRadius="7" FontSize="12"
+                                                  SelectionChanged="OnVaultLockChanged">
+                                            <ComboBoxItem Content="1 分钟" Tag="1"/>
+                                            <ComboBoxItem Content="5 分钟" Tag="5"/>
+                                            <ComboBoxItem Content="15 分钟" Tag="15"/>
+                                            <ComboBoxItem Content="30 分钟" Tag="30"/>
+                                            <ComboBoxItem Content="60 分钟" Tag="60"/>
+                                            <ComboBoxItem Content="不自动锁定" Tag="0"/>
+                                        </ComboBox>
+                                    </Grid>
+                                    <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
+                                    <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <Border Style="{StaticResource RowTileGreenStyle}">
+                                            <FontIcon Glyph="&#xE774;" FontSize="12" Foreground="{ThemeResource RowGlyphGreenBrush}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="浏览器自动填充" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                            <TextBlock Style="{StaticResource SettingsRowHintStyle}"
+                                                       Text="允许已关联的浏览器扩展请求密码库中的凭据"/>
+                                        </StackPanel>
+                                        <ToggleSwitch x:Name="VaultBrowserSwitch" Grid.Column="2" MinWidth="0" HorizontalAlignment="Right"
+                                                      OnContent="" OffContent="" Toggled="OnVaultBrowserToggled"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- 7. 关于面板：内容块在可视区内垂直居中，避免大片留白 -->
                 <ScrollViewer x:Name="PanelAbout" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="7" MaxWidth="620" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,24">
                         <Border Style="{StaticResource SettingsCardStyle}" Padding="18,20">

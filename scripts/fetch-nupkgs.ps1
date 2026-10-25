@@ -35,6 +35,10 @@ $PackageChecksums = @{
     "xunit|2.9.3"                                      = "04fae949b8e5201ecfa07fa8702baca8c0eb3198114194b3793789cc72bf23d7"
     "xunit.runner.visualstudio|3.1.5"                  = "3b9eb9efcf3840695db33b045901420d14d7562141999e06182fb8894faeb124"
     "ZXing.Net|0.16.10"                                = "d27ace46197fe68b97607943aae6b76c4ca4a7a5ed28044b0f4ba61d33a70350"
+    # 密码库 KDF：Argon2id（纯托管，MIT）；Blake2b/SecureArray 为其同作者传递依赖
+    "Isopoh.Cryptography.Argon2|2.0.0"                 = "8158d404211a5ba0a71c1287256bed971736828b3e63b5d17507539969e7a2db"
+    "Isopoh.Cryptography.Blake2b|2.0.0"                = "41e041f03e342062c5241a714fd4c76e9e7132fe74470c6e9b2573259de5d672"
+    "Isopoh.Cryptography.SecureArray|2.0.0"            = "588fd0ce870201578d2579ef1dc8f8e1a4985e37ab1f9d0045bacbe57626d0e3"
     "Microsoft.WindowsAppSDK.InteractiveExperiences|2.1.9" = "f9159d73e3e46717f159606e43b4acf8336aaff5bdd4d395fe3a93fdb41437ac"
     "NETStandard.Library|2.0.0"                        = "3e9edf47295a8bc26b1353bef5319f20426b00e9a75932512d613ea8905a84ad"
     "Microsoft.NETCore.Platforms|1.1.0"                = "15e338d24b5c39b4099389cc612841eb51ff13c07bb4829f97d39b27420e7023"
@@ -253,6 +257,7 @@ $seeds = @(
     "xunit|2.9.3",
     "xunit.runner.visualstudio|3.1.5",
     "ZXing.Net|0.16.10",
+    "Isopoh.Cryptography.Argon2|2.0.0",
     "SQLitePCLRaw.bundle_e_sqlite3|2.1.14"
 )
 $queue = New-Object System.Collections.Generic.Queue[string]

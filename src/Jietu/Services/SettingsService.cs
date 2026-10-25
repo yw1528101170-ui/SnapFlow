@@ -163,6 +163,14 @@ public static class SettingsService
             settings.HistoryHotkey = defaults.HistoryHotkey;
         }
 
+        if (string.IsNullOrWhiteSpace(settings.VaultHotkey))
+        {
+            settings.VaultHotkey = defaults.VaultHotkey;
+        }
+
+        // 0 = 不按空闲锁定（锁屏/睡眠仍会锁），上限 8 小时。
+        settings.VaultLockMinutes = Math.Clamp(settings.VaultLockMinutes, 0, 480);
+
         settings.SaveFolder ??= "";
         settings.IgnoredProcesses = ProcessNames.Normalize(settings.IgnoredProcesses);
         settings.OsdPosition = NormalizeOsdPosition(settings.OsdPosition);

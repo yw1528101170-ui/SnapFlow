@@ -56,7 +56,7 @@ internal sealed class SettingsApplier
 
     public string? TryApply(AppSettings next)
     {
-        if (!TryParseAll(next, out var shot, out var history, out var error))
+        if (!TryParseAll(next, out var shot, out var history, out var vault, out var error))
         {
             return error;
         }
@@ -82,7 +82,7 @@ internal sealed class SettingsApplier
             }
         }
 
-        error = Register(shot, history);
+        error = Register(shot, history, vault);
         if (error != null)
         {
             RegisterCurrent();
@@ -118,18 +118,18 @@ internal sealed class SettingsApplier
 
     public string? RegisterCurrent()
     {
-        if (!TryParseAll(_current, out var shot, out var history, out var error))
+        if (!TryParseAll(_current, out var shot, out var history, out var vault, out var error))
         {
             return error;
         }
 
-        return Register(shot, history);
+        return Register(shot, history, vault);
     }
 
-    private string? Register(HotkeyGesture shot, HotkeyGesture history)
+    private string? Register(HotkeyGesture shot, HotkeyGesture history, HotkeyGesture vault)
     {
         UnregisterHotkeys();
-        var items = new (int Id, HotkeyGesture Gesture)[] { (1, shot), (2, history) };
+        var items = new (int Id, HotkeyGesture Gesture)[] { (1, shot), (2, history), (3, vault) };
         var failed = new List<string>();
         foreach (var item in items)
         {
@@ -145,8 +145,8 @@ internal sealed class SettingsApplier
 
     public void UnregisterHotkeys()
     {
-        // Register 只注册 1（截屏）和 2（历史），反注册范围保持一致即可
-        for (var id = 1; id <= 2; id++)
+        // Register 只注册 1（截屏）、2（历史）和 3（密码库），反注册范围保持一致即可
+        for (var id = 1; id <= 3; id++)
         {
             NativeMethods.UnregisterHotKey(_hotkeyWindow, id);
         }
@@ -156,12 +156,14 @@ internal sealed class SettingsApplier
         AppSettings settings,
         out HotkeyGesture shot,
         out HotkeyGesture history,
+        out HotkeyGesture vault,
         out string? error)
     {
-        shot = history = default;
+        shot = history = vault = default;
         if (!HotkeyGesture.TryParse(settings.RegionHotkey, out shot, out error)) return false;
         if (!HotkeyGesture.TryParse(settings.HistoryHotkey, out history, out error)) return false;
-        error = HotkeyGesture.DuplicateMessage([shot, history]);
+        if (!HotkeyGesture.TryParse(settings.VaultHotkey, out vault, out error)) return false;
+        error = HotkeyGesture.DuplicateMessage([shot, history, vault]);
         return error == null;
     }
 

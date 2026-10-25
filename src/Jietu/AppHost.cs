@@ -31,6 +31,12 @@ public sealed class AppHost
     private Task? _purgeLoop;
     private readonly PostCapturePipeline _pipeline;
     private AiVisionWindow? _aiVisionWindow;
+    // 密码库会话与主窗口：窗口与 SettingsWindow 一样惰性创建，会话在组合根就位。
+    private VaultSession? _vault;
+    private PasswordWindow? _passwordWindow;
+
+    /// <summary>密码库会话。UI 线程访问；组合根在设置就绪后创建。</summary>
+    public VaultSession Vault => _vault ??= new VaultSession(_queue, () => _settingsApplier.Current);
 
     // 设置实例由 SettingsApplier 持有；这里保持只读视图，TryApply 换新实例后所有读取点自动生效。
     private AppSettings _settings => _settingsApplier.Current;
@@ -68,6 +74,7 @@ public sealed class AppHost
                 NativeMethods.AllowSetForegroundWindow(Environment.ProcessId);
                 _queue.TryEnqueue(() => _trayController.Handle(message, target));
             });
+        App.SessionLockedSink = _message;
         _clipboard = new ClipboardService(_message.Handle) { Paused = settings.Paused };
         _pins = new PinManager(_clipboard, _toast, Track, OpenAiVision);
         _store = new HistoryStore(
@@ -177,7 +184,14 @@ public sealed class AppHost
                 ClearHistory();
             },
             _toast,
-            _message.Handle);
+            _message.Handle,
+            () => _vault?.IsUnlocked == true,
+            ToggleVault,
+            () =>
+            {
+                _vault?.Lock();
+                _toast.Show("密码库已锁定");
+            });
     }
 
     public AppSettings Settings => _settings;
@@ -267,6 +281,9 @@ public sealed class AppHost
         Safe(_tray.Dispose);
         Safe(_message.Destroy);
         Safe(SingleInstance.Stop);
+
+        // 密码库：退出即锁定清场（清密钥、删 Hello 副本、停计时器）。
+        Safe(() => _vault?.Dispose());
 
         Safe(_pins.CloseAllOnShutdown);
         Safe(_history.AllowClose);
@@ -539,6 +556,9 @@ public sealed class AppHost
                     _history.Present(foreground);
                 }
                 break;
+            case 3:
+                ToggleVault();
+                break;
         }
     }
 
@@ -584,11 +604,28 @@ public sealed class AppHost
         EnsureSettingsWindow().Show(error);
     }
 
-    /// <summary>
-    /// 首次访问设置页时才构建窗口。所有调用点（托盘菜单、启动错误提示、ShowSettings、
+    /// <summary>唤出/隐藏密码库主窗口（热键 Alt+P、托盘菜单入口）。</summary>
+    public void ToggleVault()
+    {
+        var window = EnsurePasswordWindow();
+        if (window.IsOpen)
+        {
+            window.Dismiss();
+        }
+        else
+        {
+            window.Present();
+        }
+    }
+
+    private PasswordWindow EnsurePasswordWindow()
+    {
+        return _passwordWindow ??= new PasswordWindow(this);
+    }
+
+    /// <summary>首次访问设置页时才构建窗口。所有调用点（托盘菜单、启动错误提示、ShowSettings、
     /// 截图前的收窗逻辑）都在 UI 线程上执行，不存在并发创建；窗口关闭走 Hide（Dismiss），
-    /// 创建一次后常驻复用，与原行为一致。
-    /// </summary>
+    /// 创建一次后常驻复用，与原行为一致。</summary>
     private SettingsWindow EnsureSettingsWindow()
     {
         return _settingsWindow ??= new SettingsWindow(this);

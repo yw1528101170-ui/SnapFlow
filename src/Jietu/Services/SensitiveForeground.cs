@@ -36,6 +36,12 @@ internal static class SensitiveForeground
     private static string[] _ignored = [];
     private static bool _recordTerminals;
 
+    // 密码库主窗口句柄：窗口激活时注册，激活丢失时清除。是自身进程的窗口，
+    // 不能按进程名识别（会把 SnapFlow 自己的所有窗口都挡掉），必须按句柄精确挡。
+    private static volatile IntPtr _vaultWindow;
+
+    public static void SetVaultWindow(IntPtr hwnd) => _vaultWindow = hwnd;
+
     public static void SetIgnored(IReadOnlyList<string> names)
     {
         _ignored = names.Count == 0 ? [] : names.ToArray();
@@ -45,6 +51,12 @@ internal static class SensitiveForeground
 
     public static bool IsBlocked()
     {
+        var hwnd = NativeMethods.GetForegroundWindow();
+        if (hwnd != IntPtr.Zero && hwnd == _vaultWindow)
+        {
+            return true;
+        }
+
         var fileName = ForegroundFileName();
         return BlocksProcess(fileName) || IsPasswordFocus();
     }

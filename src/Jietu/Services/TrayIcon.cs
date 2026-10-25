@@ -11,6 +11,8 @@ internal enum TrayCommand : uint
     CaptureDelay10 = 15,
     ShowHistory = 20,
     ClearHistory = 21,
+    ShowVault = 22,
+    LockVault = 23,
     OpenFolder = 30,
     ClosePins = 31,
     RestoreGhostPins = 32,
@@ -35,7 +37,9 @@ internal readonly record struct TrayMenuContext(
     bool HasGhostPins,
     bool ShowOsd,
     string OsdPosition,
-    string OsdDisplay);
+    string OsdDisplay,
+    string VaultHotkey,
+    bool VaultUnlocked);
 
 internal sealed class TrayIcon : IDisposable
 {
@@ -137,6 +141,16 @@ internal sealed class TrayIcon : IDisposable
             var historyText = string.IsNullOrWhiteSpace(ctx.HistoryHotkey) ? "剪贴板历史" : $"剪贴板历史\t{ctx.HistoryHotkey}";
             Add(menu, (nuint)TrayCommand.ShowHistory, historyText);
             Add(menu, (nuint)TrayCommand.ClearHistory, "清空历史记录...");
+
+            NativeMethods.AppendMenu(menu, NativeMethods.MfSeparator, 0, null);
+
+            // 3.5 密码库
+            var vaultText = string.IsNullOrWhiteSpace(ctx.VaultHotkey) ? "密码库" : $"密码库\t{ctx.VaultHotkey}";
+            Add(menu, (nuint)TrayCommand.ShowVault, vaultText);
+            if (ctx.VaultUnlocked)
+            {
+                Add(menu, (nuint)TrayCommand.LockVault, "锁定密码库");
+            }
 
             NativeMethods.AppendMenu(menu, NativeMethods.MfSeparator, 0, null);
 

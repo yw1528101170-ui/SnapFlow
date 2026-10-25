@@ -11,6 +11,9 @@ public static class AppPaths
         AppFolderName);
 
     public static string Database => Path.Combine(Root, "history.db");
+    public static string VaultFile => Path.Combine(Root, "vault.spv");
+    /// <summary>Windows Hello 快速解锁的包裹密钥副本（库密钥用 Hello 派生密钥加密后存放）。</summary>
+    public static string HelloBlob => Path.Combine(Root, "hello.blob");
     public static string Images => Path.Combine(Root, "images");
     public static string Thumbs => Path.Combine(Root, "thumbs");
     public static string Temp => Path.Combine(Root, "temp");

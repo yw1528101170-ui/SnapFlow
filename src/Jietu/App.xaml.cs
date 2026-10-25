@@ -7,6 +7,12 @@ public partial class App : Application
 {
     private AppHost? _host;
 
+    /// <summary>
+    /// 应用级消息窗口（WTS 锁屏 / 电源广播从这里来）。VaultSession 构造时晚于
+    /// AppHost 的消息窗口创建，通过这个静态桥接订阅「锁屏/睡眠立即锁定」。
+    /// </summary>
+    internal static MessageWindow? SessionLockedSink { get; set; }
+
     // 全局异常分级响应：偶发异常吞掉并 Toast 提示；短窗口内反复异常说明某组件已进入
     // 持续的坏状态，继续吞只会变成“界面失灵但进程存活”的僵尸，升级为弹窗 + 干净退出。
     private const int ErrorBurstCount = 3;

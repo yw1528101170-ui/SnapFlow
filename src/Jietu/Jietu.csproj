@@ -50,5 +50,7 @@
          该版本有已知高危安全公告 GHSA-2m69-gcr7-jv3q，2.1.14 为修复版 -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.14" />
     <PackageReference Include="ZXing.Net" Version="0.16.10" />
+    <!-- 密码库 KDF：Argon2id（纯托管实现，MIT）；经 scripts/fetch-nupkgs.ps1 离线缓存分发 -->
+    <PackageReference Include="Isopoh.Cryptography.Argon2" Version="2.0.0" />
   </ItemGroup>
 </Project>
