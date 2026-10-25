@@ -265,7 +265,72 @@ public sealed class AppHost
             EnsureSettingsWindow().Show(error);
         }
 
+#if DEBUG
+        if (DevBridge.Enabled)
+        {
+            StartDevMode();
+        }
+#endif
     }
+
+#if DEBUG
+    /// <summary>
+    /// 开发模式（--dev）的启动收尾：
+    /// 1) 有上次的窗口状态就还原（dev.ps1 自动重启时，界面看起来像没重启过）；
+    /// 2) 没有就默认打开设置窗口 —— 调 UI 时九成在改它，省掉「右键托盘 → 设置」那一步；
+    /// 3) 开命名管道，等 dev.ps1 发优雅退出指令。
+    /// </summary>
+    private void StartDevMode()
+    {
+        DevBridge.Attach(this, _queue);
+        if (DevBridge.RestoreSession(this, _queue))
+        {
+            return;
+        }
+
+        _queue.TryEnqueue(() =>
+        {
+            if (!_shuttingDown)
+            {
+                EnsureSettingsWindow().Show(null);
+            }
+        });
+    }
+#endif
+
+#if DEBUG
+    /// <summary>开发期热重载：记下当前开着的窗口（只在 UI 线程读）。</summary>
+    internal DevSessionState CaptureDevSession() => new()
+    {
+        Settings = _settingsWindow?.AppWindow.IsVisible == true,
+        History = _history.IsOpen,
+        Vault = _passwordWindow?.IsOpen == true,
+    };
+
+    /// <summary>开发期热重载：重启后把上次开着的窗口重新打开（只在 UI 线程调用）。</summary>
+    internal void RestoreDevSession(DevSessionState state)
+    {
+        if (_shuttingDown)
+        {
+            return;
+        }
+
+        if (state.Settings)
+        {
+            EnsureSettingsWindow().Show(null);
+        }
+
+        if (state.Vault)
+        {
+            EnsurePasswordWindow().Present();
+        }
+
+        if (state.History)
+        {
+            _history.Present(PasteTarget.Capture());
+        }
+    }
+#endif
 
     public void Shutdown()
     {

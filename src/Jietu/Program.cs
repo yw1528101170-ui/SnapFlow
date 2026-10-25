@@ -35,6 +35,13 @@ public static class Program
             Environment.Exit(OverlayPreview.Run(directory));
         }
 
+#if DEBUG
+        // 开发热重载（scripts/dev.ps1）：--dev 走独立单实例通道，并让本进程接受
+        // “优雅退出”请求，这样监视脚本可以在不手动关闭程序的前提下替换二进制。
+        DevBridge.Enabled = args.Contains("--dev");
+        SingleInstance.ChannelSuffix = DevBridge.Enabled ? ".dev" : "";
+#endif
+
         if (!SingleInstance.Acquire())
         {
             SingleInstance.SignalExisting();

@@ -16,7 +16,18 @@ public sealed record VaultBridgeLogin(string Id, string Title, string Username, 
 /// </summary>
 public static class VaultBridgeProtocol
 {
-    /// <summary>URL 匹配：host 精确（含子域后缀匹配），忽略协议/端口/路径。纯函数可单测。</summary>
+    /// <summary>单次返回条目上限（每条都含明文密码，返回越少泄漏面越小）。</summary>
+    public const int MaxReturnedLogins = 5;
+
+    /// <summary>取 host 供审计记录用：不记录完整 URL，避免把路径里的敏感信息带进审计。</summary>
+    public static string HostOfUrl(string url) => HostOf(url);
+
+    /// <summary>
+    /// URL 匹配：host 精确（含子域后缀匹配），忽略协议/端口/路径。纯函数可单测。
+    ///
+    /// 后缀匹配只对"机构主域"开放：单标签 host（`com`）与多级公共后缀（`github.io`）
+    /// 一律降级为精确相等，否则 `evil.github.io` 会命中 `github.io` 条目并自动填充密码。
+    /// </summary>
     public static bool UrlMatches(string entryUrl, string requestUrl)
     {
         if (string.IsNullOrWhiteSpace(entryUrl) || string.IsNullOrWhiteSpace(requestUrl))
@@ -26,10 +37,23 @@ public static class VaultBridgeProtocol
 
         var entryHost = HostOf(entryUrl);
         var requestHost = HostOf(requestUrl);
-        return entryHost.Length > 0
-               && requestHost.Length > 0
-               && (requestHost.Equals(entryHost, StringComparison.OrdinalIgnoreCase)
-                   || requestHost.EndsWith("." + entryHost, StringComparison.OrdinalIgnoreCase));
+        if (entryHost.Length == 0 || requestHost.Length == 0)
+        {
+            return false;
+        }
+
+        if (requestHost.Equals(entryHost, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!VaultSuffixPolicy.AllowsSuffixMatch(entryHost))
+        {
+            return false;
+        }
+
+        // 带前导点比较：`notgithub.com` 不会命中 `github.com`。
+        return requestHost.EndsWith("." + entryHost, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>取 URL 的 host；没有 scheme 的裸域名（用户手存的 "example.com"）原样返回；www. 前缀视作等价。</summary>
@@ -62,8 +86,14 @@ internal sealed class VaultBridge : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _acceptLoop;
 
-    private sealed record PendingPair(string PairId, string DisplayName, string TokenHash, TaskCompletionSource<bool> Tcs);
-    private PendingPair? _pendingPair;
+    /// <summary>配对槽位（原子占用，防并发连接同时"抢到"）。</summary>
+    private readonly VaultPairingGate _pairing = new();
+
+    /// <summary>请求限流：60 次/分钟，超限暂停 60 秒。</summary>
+    private readonly VaultRateLimiter _limiter = new();
+
+    /// <summary>内存审计（200 条，不落盘、不含用户名与口令）。</summary>
+    private readonly VaultAuditLog _audit = new();
 
     /// <summary>UI 订阅：弹出关联确认（displayName 供用户核对），CompletePair 给出结果。</summary>
     public event Action<string, string>? PairRequested;
@@ -75,6 +105,9 @@ internal sealed class VaultBridge : IDisposable
         _settings = settings;
     }
 
+    /// <summary>供设置页展示"最近的取用记录"。</summary>
+    public IReadOnlyList<VaultAuditRecord> RecentAudit => _audit.Snapshot();
+
     public void Start()
     {
         _acceptLoop ??= Task.Run(() => AcceptLoopAsync(_cts.Token));
@@ -83,7 +116,8 @@ internal sealed class VaultBridge : IDisposable
     /// <summary>UI 线程调用：处理关联确认结果。</summary>
     public void CompletePair(string pairId, bool accept)
     {
-        if (_pendingPair?.PairId != pairId)
+        var pending = _pairing.Current;
+        if (pending?.PairId != pairId)
         {
             return;
         }
@@ -93,26 +127,20 @@ internal sealed class VaultBridge : IDisposable
             var data = _vault.Data;
             if (data != null)
             {
-                data.TrustedBrowsers.RemoveAll(b => b.TokenHash == _pendingPair.TokenHash);
+                data.TrustedBrowsers.RemoveAll(b => b.TokenHash == pending.TokenHash);
                 data.TrustedBrowsers.Add(new VaultTrustedBrowser
                 {
                     Id = Guid.NewGuid().ToString("N"),
-                    DisplayName = _pendingPair.DisplayName,
-                    TokenHash = _pendingPair.TokenHash,
+                    DisplayName = pending.DisplayName,
+                    TokenHash = pending.TokenHash,
                 });
-                try
-                {
-                    _vault.Save();
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex);
-                }
+
+                // 走异步保存管线：配对是低频操作，但没必要为它开一条同步写盘路径。
+                _vault.RequestSave();
             }
         }
 
-        _pendingPair.Tcs.TrySetResult(accept);
-        _pendingPair = null;
+        _pairing.Complete(pairId, accept);
     }
 
     private async Task AcceptLoopAsync(CancellationToken ct)
@@ -254,24 +282,24 @@ internal sealed class VaultBridge : IDisposable
         }
 
         // 未关联：弹桌面确认。同一时刻只允许一个待确认请求，其余直接拒绝。
-        if (_pendingPair != null)
+        // TryBegin 把"判断是否已有等待"和"占位"放进同一个临界区：
+        // 原来的先判 null 再赋值在并发连接下会让两个请求都认为自己抢到了。
+        var pairId = Guid.NewGuid().ToString("N");
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_pairing.TryBegin(new VaultPairingGate.PendingPair(pairId, displayName, tokenHash, tcs)))
         {
             return Error("pair-busy");
         }
 
-        var pairId = Guid.NewGuid().ToString("N");
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingPair = new PendingPair(pairId, displayName, tokenHash, tcs);
         _queue.TryEnqueue(() => PairRequested?.Invoke(pairId, displayName));
 
         // 确认超时 60 秒：超时按拒绝处理。
         var timeout = Task.Delay(60_000);
         var finished = await Task.WhenAny(tcs.Task, timeout);
         var accepted = finished == tcs.Task && tcs.Task.Result;
-        if (_pendingPair?.PairId == pairId)
-        {
-            _pendingPair = null;
-        }
+
+        // 只清掉自己那一个槽位：若已超时并被新请求占用，不能把新请求一起清掉。
+        _pairing.Abandon(pairId);
 
         return accepted
             ? Json(new { type = "hello-result", ok = true, paired = true, locked = false })
@@ -279,19 +307,58 @@ internal sealed class VaultBridge : IDisposable
     }
 
     private string Status()
-        => Json(new { type = "status", exists = _vault.Exists, locked = !_vault.IsUnlocked, integration = _settings().VaultBrowserIntegration });
+    {
+        var block = _vault.Block;
+        var exists = _vault.Exists;
+        // blocked 为 null 表示"库可用/未创建"；有值时是 legacy-v1 / newer-version / integrity / unknown-file。
+        // formatVersion 只用于让扩展区分"旧库"与"损坏"，不做任何解密推测。
+        var formatVersion = block.Kind switch
+        {
+            VaultBlockKind.LegacyV1 => 1,
+            VaultBlockKind.None => exists ? 2 : 0,
+            _ => 0,
+        };
+        return Json(new
+        {
+            type = "status",
+            exists,
+            locked = !_vault.IsUnlocked,
+            blocked = block.Kind == VaultBlockKind.None ? null : block.Reason,
+            formatVersion,
+            integration = _settings().VaultBrowserIntegration,
+        });
+    }
 
     private string GetLogins(JsonElement root)
     {
+        var url = GetString(root, "url") ?? "";
+        var host = VaultBridgeProtocol.HostOfUrl(url);
+
+        // 限流放在最前：异常程序连"探测开关状态"都不该有免费额度。
+        if (!_limiter.TryAcquire(out var retryAfter))
+        {
+            _audit.Record(host, VaultAuditResult.RateLimited);
+            return Json(new { type = "error", reason = "rate-limited", retryAfterSeconds = retryAfter });
+        }
+
         // 集成开关必须在每条取凭据的请求上生效：只在配对时检查的话，
         // 用户关闭集成后已配对的扩展仍能继续读密码。
         if (!_settings().VaultBrowserIntegration)
         {
+            _audit.Record(host, VaultAuditResult.IntegrationDisabled);
             return Error("integration-disabled");
+        }
+
+        // 阻断态必须显式告诉扩展，否则扩展会把"读不到"当成"没有这个站点的密码"。
+        if (_vault.IsBlocked)
+        {
+            _audit.Record(host, VaultAuditResult.Blocked);
+            return Json(new { type = "error", reason = "vault-blocked", detail = _vault.Block.Reason });
         }
 
         if (!_vault.IsUnlocked)
         {
+            _audit.Record(host, VaultAuditResult.VaultLocked);
             return Json(new { type = "logins", locked = true, entries = Array.Empty<object>() });
         }
 
@@ -299,14 +366,20 @@ internal sealed class VaultBridge : IDisposable
         if (token is not { Length: >= 32 }
             || _vault.Data?.TrustedBrowsers.Any(b => b.TokenHash == Hashing.OfText(token)) != true)
         {
+            _audit.Record(host, VaultAuditResult.NotPaired);
             return Error("not-paired");
         }
 
-        var url = GetString(root, "url") ?? "";
+        // 只返回该域名的前 5 条：填充菜单放不下更多，而返回越少，单次请求的泄漏面越小
+        // （每一条都含明文密码）。回收站条目不在 Entries 里，天然被排除。
         var entries = _vault.Data!.Entries
             .Where(e => e.Kind == "login" && VaultBridgeProtocol.UrlMatches(e.Url, url))
+            .OrderByDescending(e => e.UpdatedUtc)
+            .Take(VaultBridgeProtocol.MaxReturnedLogins)
             .Select(e => new VaultBridgeLogin(e.Id, e.Title, e.Username, e.Password, e.Url))
             .ToArray();
+
+        _audit.Record(host, VaultAuditResult.Ok, entries.Length);
         return Json(new { type = "logins", locked = false, entries });
     }
 

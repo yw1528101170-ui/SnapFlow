@@ -2,12 +2,22 @@ namespace Jietu;
 
 internal static class SingleInstance
 {
-    private const string MutexName = @"Local\SnapFlow.SingleInstance";
-    private const string EventName = @"Local\SnapFlow.Activate";
+    private const string BaseMutexName = @"Local\SnapFlow.SingleInstance";
+    private const string BaseEventName = @"Local\SnapFlow.Activate";
+
+    // 开发热重载（--dev）走独立通道：否则开发实例会被已安装版本拦在门外，
+    // 反过来调 Restart 时也会把用户真正在用的那份窗口顶掉。
+    private static string MutexName => BaseMutexName + ChannelSuffix;
+    private static string EventName => BaseEventName + ChannelSuffix;
+
     private static Mutex? _mutex;
     private static EventWaitHandle? _event;
     private static Thread? _thread;
     private static volatile bool _stop;
+
+    /// <summary>单实例通道后缀（空 = 正式通道，".dev" = 开发热重载通道）。启动前设置一次。</summary>
+    internal static string ChannelSuffix { get; set; } = "";
+
 
     public static bool Acquire()
     {

@@ -116,4 +116,38 @@ public static class BrowserIntegration
 
         return false;
     }
+
+    /// <summary>从已写入的清单里读出关联的扩展 ID；未启用或未关联（allowed_origins 为空）时返回 null。</summary>
+    public static string? GetConfiguredExtensionId()
+    {
+        try
+        {
+            if (!File.Exists(ManifestPath))
+            {
+                return null;
+            }
+
+            using var doc = JsonDocument.Parse(File.ReadAllText(ManifestPath));
+            if (!doc.RootElement.TryGetProperty("allowed_origins", out var origins)
+                || origins.ValueKind != JsonValueKind.Array
+                || origins.GetArrayLength() == 0)
+            {
+                return null;
+            }
+
+            var origin = origins[0].GetString() ?? "";
+            const string prefix = "chrome-extension://";
+            if (origin.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                origin = origin[prefix.Length..];
+            }
+
+            origin = origin.TrimEnd('/');
+            return origin.Length > 0 ? origin : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
 }

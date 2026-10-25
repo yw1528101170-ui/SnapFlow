@@ -99,7 +99,11 @@ public sealed class PasswordGeneratorTests
 
         var (mixedBits, mixedClasses) = PasswordGenerator.EstimatePasswordEntropy("Abc123!!");
         Assert.Equal(4, mixedClasses);
-        Assert.Equal(8 * Math.Log2(26 + 26 + 10 + 33), mixedBits, 5);
+        // 符号池取生成器实际使用的集合（去掉了易混淆符号），保证"生成器给的强度"与"强度计显示"口径一致。
+        Assert.Equal(
+            8 * Math.Log2(26 + 26 + 10 + PasswordGenerator.SymbolPoolSize),
+            mixedBits,
+            5);
         Assert.True(mixedBits > lowerBits);
 
         // 空串与单类内容的边界。
@@ -114,7 +118,14 @@ public sealed class PasswordGeneratorTests
         var six = PasswordGenerator.EstimatePassphraseEntropyBits(6);
         Assert.Equal(4 * Math.Log2(PasswordGenerator.WordListSize), four, 5);
         Assert.True(six > four);
-        // 词表至少 2^7：4 词短语不低于 28 bit 是「短小易拼写词表」的底线。
-        Assert.True(PasswordGenerator.WordListSize >= 128);
+
+        // 词表必须是完整的 EFF 大词表。断言精确值而不是下限：词表被截断时熵会凭空下降，
+        // 而界面仍按实算显示 77 bit —— "看起来正常、实际更弱"是最坏的失败形态。
+        Assert.Equal(7776, PasswordGenerator.WordListSize);
+
+        // 6 词 ≈ 77.55 bit，界面显示 77（向下取整）。SEC-01 的验收线是 ≥77。
+        Assert.InRange(six, 77.0, 78.0);
+        Assert.Equal(77, PasswordGenerator.PassphraseEntropyBits(6));
+        Assert.True(PasswordGenerator.PassphraseEntropyBits(4) >= 51, "4 词短语不得低于 51 bit");
     }
 }

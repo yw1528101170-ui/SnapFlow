@@ -981,46 +981,100 @@ internal static class SelfTest
     }
 
     /// <summary>
-    /// 密码库容器冒烟：头序列化/解析、整库加密往返、篡改必败、损坏文件备份。
-    /// 用小 KDF 参数（8MiB/1 迭代）保证自检秒级完成。
+    /// 密码库容器 v2 冒烟：头逐字段偏移、AAD 篡改必败、加解密往返、v1 阻断判定、落盘往返。
+    /// 用小 KDF 参数（8MiB/1 迭代）保证自检秒级完成；全流程用 using 管 VaultKey，
+    /// 避免自检自己成为"密钥未清零"的反例。
     /// </summary>
     private static void CheckVault(List<string> failures)
     {
         try
         {
-            var header = new VaultHeader
+            var header = VaultHeader.NewV2(iterations: 1, memoryKiB: VaultFormat.MinMemoryKiB, parallelism: 1);
+            var headerBytes = header.ToBytes();
+            Expect(headerBytes.Length == VaultFormat.HeaderLength && VaultFormat.HeaderLength == 80, "vault v2 头长度 80", failures);
+            Expect(headerBytes.AsSpan(0, 8).SequenceEqual(VaultFormat.Magic), "vault magic 在偏移 0", failures);
+            Expect(System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(headerBytes.AsSpan(8, 4)) == 2, "vault formatVersion=2", failures);
+            // TryReadHeader 会校验 raw.Length == 80 + cipherLength，所以探针必须是完整文件字节；
+            // 只喂 80 字节的头会被正确判成"被截断"。
+            var headerProbe = header.WithPlaintextLength(1);
+            var probeBytes = new byte[VaultFormat.HeaderLength + (int)headerProbe.CipherLength];
+            headerProbe.ToBytes().CopyTo(probeBytes, 0);
+            Expect(VaultFormat.TryReadHeader(probeBytes, out var parsed, out var status) && status == VaultOpenStatus.Ok, "vault 头序列化往返", failures);
+            Expect(parsed.Iterations == 1 && parsed.MemoryKiB == VaultFormat.MinMemoryKiB && parsed.Parallelism == 1, "vault 头参数保真", failures);
+            Expect(parsed.Salt.AsSpan().SequenceEqual(header.Salt) && parsed.Nonce.AsSpan().SequenceEqual(header.Nonce), "vault 盐/nonce 保真", failures);
+            Expect(VaultFormat.BuildAad(header).Length == VaultFormat.AadLength && VaultFormat.AadLength == 97, "vault AAD 长度 97", failures);
+
+            // 样本带上回收站与历史，顺带验证预留字段能进能出。
+            var data = VaultDefaults.NewData();
+            data.Entries.Add(new VaultEntry
             {
-                Version = VaultHeader.CurrentVersion,
-                Salt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(VaultHeader.SaltLength),
-                Iterations = 1,
-                MemoryKiB = VaultHeader.MinMemoryKiB,
-                Parallelism = 1,
-                Nonce = System.Security.Cryptography.RandomNumberGenerator.GetBytes(VaultHeader.NonceLength),
-            };
-            Expect(VaultHeader.TryParse(header.ToBytes(), out var parsed), "vault 头序列化往返", failures);
-            Expect(parsed.Iterations == 1 && parsed.MemoryKiB == VaultHeader.MinMemoryKiB, "vault 头参数保真", failures);
+                Id = "self-1",
+                Title = "自检条目",
+                Username = "self",
+                Password = "self-test-value",
+                Url = "https://example.com",
+            });
+            data.Entries[0].History.Add(new VaultEntryVersion { ChangedFields = ["password"], Password = "self-test-old" });
+            data.RecycleBin.Add(new VaultEntry { Id = "self-2", Title = "自检回收站", DeletedUtc = DateTimeOffset.UtcNow });
 
-            var bad = header.ToBytes();
-            bad[0] = (byte)'X';
-            Expect(!VaultHeader.TryParse(bad, out _), "vault 头拒绝坏 magic", failures);
+            using var key = VaultCrypto.DeriveKey("self-test-password"u8, header);
+            var file = VaultCrypto.SealFile(data, header, key, out var sealedHeader);
 
-            var key = VaultCrypto.DeriveKey("self-test"u8, header);
-            var body = VaultCrypto.Seal(header, key, VaultDefaults.NewData());
-            Expect(VaultCrypto.Open(header, key, body) != null, "vault 加解密往返", failures);
-            var tampered = (byte[])body.Clone();
-            tampered[0] ^= 0xFF;
-            Expect(VaultCrypto.Open(header, key, tampered) == null, "vault 篡改必败", failures);
+            var read = VaultStore.ClassifyBytes(file);
+            Expect(read.Kind == VaultFileKind.V2 && read.Body != null, "vault 落盘字节分类为 v2", failures);
+            var opened = VaultCrypto.Open(sealedHeader, key, read.Body!);
+            Expect(opened.Ok, "vault 加解密往返", failures);
+            Expect(opened.Data is { } roundTrip
+                   && roundTrip.Entries.Count == 1
+                   && roundTrip.Entries[0].History.Count == 1
+                   && roundTrip.RecycleBin.Count == 1,
+                "vault 回收站/历史字段往返", failures);
+
+            // AAD 篡改：改 salt ⇒ 结构仍合法但 tag 必败；改 magic/参数 ⇒ 派生前就被拒。
+            var tampered = (byte[])file.Clone();
+            tampered[40] ^= 0xFF;
+            var saltRead = VaultStore.ClassifyBytes(tampered);
+            Expect(saltRead.Kind == VaultFileKind.V2 && !VaultCrypto.Open(saltRead.Header, key, saltRead.Body!).Ok,
+                "vault 改 salt 解密必败", failures);
+
+            tampered = (byte[])file.Clone();
+            tampered[56] ^= 0xFF;
+            var nonceRead = VaultStore.ClassifyBytes(tampered);
+            Expect(nonceRead.Kind == VaultFileKind.V2 && !VaultCrypto.Open(nonceRead.Header, key, nonceRead.Body!).Ok,
+                "vault 改 nonce 解密必败", failures);
+
+            tampered = (byte[])file.Clone();
+            tampered[0] = (byte)'X';
+            Expect(VaultStore.ClassifyBytes(tampered).Kind == VaultFileKind.Unknown, "vault 改 magic 判未知", failures);
+
+            tampered = (byte[])file.Clone();
+            tampered[20] = 0;
+            Expect(VaultStore.ClassifyBytes(tampered).Kind == VaultFileKind.StructurallyInvalid, "vault 参数越界判结构不合法", failures);
+
+            // v1 阻断：把 formatVersion 改成 1 ⇒ 只判旧库，绝不进解密。
+            var legacy = (byte[])file.Clone();
+            legacy[8] = 1;
+            legacy[9] = 0;
+            legacy[10] = 0;
+            legacy[11] = 0;
+            Expect(VaultStore.ClassifyBytes(legacy).Kind == VaultFileKind.LegacyV1, "vault v1 被判为旧库", failures);
 
             var path = Path.Combine(Path.GetTempPath(), "snapflow-selftest-vault-" + Guid.NewGuid().ToString("N") + ".spv");
             try
             {
-                VaultStore.Save(path, header, body);
-                var raw = VaultStore.Load(path);
-                Expect(VaultStore.Parse(path, raw) != null, "vault 文件落盘解析", failures);
+                VaultStore.Save(path, file);
+                var reread = VaultStore.Read(path);
+                Expect(reread.Kind == VaultFileKind.V2, "vault 文件落盘分类", failures);
+                Expect(VaultCrypto.Open(reread.Header, key, reread.Body!).Ok, "vault 文件落盘解密", failures);
             }
             finally
             {
-                try { File.Delete(path); } catch { }
+                // 必须连 .bak 一并清掉，否则自检会在用户临时目录里堆积备份文件。
+                foreach (var leftover in Directory.GetFiles(
+                             Path.GetDirectoryName(path)!, Path.GetFileName(path) + "*"))
+                {
+                    try { File.Delete(leftover); } catch { }
+                }
             }
         }
         catch (Exception ex)

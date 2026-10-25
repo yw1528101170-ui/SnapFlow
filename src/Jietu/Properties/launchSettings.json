@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "SnapFlow (dev)": {
+      "commandName": "Project",
+      "commandLineArgs": "--dev"
+    },
+    "SnapFlow": {
+      "commandName": "Project"
+    }
+  }
+}

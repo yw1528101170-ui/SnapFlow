@@ -34,7 +34,9 @@ internal static partial class NativeMethods
     public const uint TpmNoNotify = 0x0080;
     public const uint MbYesNo = 0x00000004;
     public const uint MbOkCancel = 0x00000001;
+    public const uint MbOk = 0x00000000;
     public const uint MbIconQuestion = 0x00000020;
+    public const uint MbIconWarning = 0x00000030;
     public const uint MbIconError = 0x00000010;
     public const uint MbDefButton2 = 0x00000100;
     public const int IdOk = 1;

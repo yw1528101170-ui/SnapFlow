@@ -1,8 +1,9 @@
-# Build outputs
+# 构建输出
 bin/
 obj/
 artifacts/
 dist/
+.dev-run/
 .build-check*.xbf
 .buildcheck/
 .buildcheck-build.log

@@ -103,23 +103,23 @@ internal static class ScreenUtil
     public static RectInt32 PlaceNearCursor(IntPtr hwnd, int dipWidth, int dipHeight)
     {
         NativeMethods.GetCursorPos(out var point);
-        var area = DisplayArea.GetFromPoint(new PointInt32(point.X, point.Y), DisplayAreaFallback.Nearest);
+        return FitAt(hwnd, point.X, point.Y, dipWidth, dipHeight);
+    }
+
+    /// <summary>
+    /// 以某个屏幕坐标（通常是窗口左上角）为锚点换尺寸：DIP → 物理像素，并夹进该显示器工作区。
+    /// 用于锁定/解锁这类「同一窗口换布局」的场景——只改大小，不跟着鼠标跑。
+    /// </summary>
+    public static RectInt32 FitAt(IntPtr hwnd, int anchorX, int anchorY, int dipWidth, int dipHeight)
+    {
+        var area = DisplayArea.GetFromPoint(new PointInt32(anchorX, anchorY), DisplayAreaFallback.Nearest);
         var scale = MonitorScale(Win32Interop.GetMonitorFromDisplayId(area.DisplayId), hwnd);
         var work = area.WorkArea;
-        var width = Math.Max(1, (int)Math.Round(dipWidth * scale));
-        var height = Math.Max(1, (int)Math.Round(dipHeight * scale));
-        if (width > work.Width)
-        {
-            width = Math.Max(1, work.Width);
-        }
+        var width = Math.Clamp((int)Math.Round(dipWidth * scale), 1, Math.Max(1, work.Width));
+        var height = Math.Clamp((int)Math.Round(dipHeight * scale), 1, Math.Max(1, work.Height));
 
-        if (height > work.Height)
-        {
-            height = Math.Max(1, work.Height);
-        }
-
-        var x = point.X;
-        var y = point.Y;
+        var x = anchorX;
+        var y = anchorY;
         if (x + width > work.X + work.Width)
         {
             x = work.X + work.Width - width;

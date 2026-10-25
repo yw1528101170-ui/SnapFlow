@@ -73,6 +73,64 @@
 
 ---
 
+## 🔥 开发调试：两条流程，按场景选
+
+WinUI 3 有两条「改完马上看到」的路子，按你在改什么选：
+
+| 你在改什么 | 用哪条 | 延迟 |
+| :--- | :--- | :--- |
+| 布局 / 颜色 / 间距 / Style / DataTemplate | **VS F5 + XAML 热重载** | 约 1 秒，界面原地变 |
+| C# 逻辑、新窗口、事件处理器、`x:Class`、x:Bind | **`scripts\dev.ps1`** 自动重启 | 约 17 秒（构建 ~15s + 重启 1~2s） |
+
+两条流程**互斥**，别同时用：`dev.ps1` 检测到 VS 正在调试会自动避让（不构建、不抢进程）。
+
+### 流程 A：VS 按 F5（调 UI 用这条）
+
+```powershell
+# 双击即开（.slnx 已关联 VS 2026），或：
+& "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\devenv.exe" E:\jietu\SnapFlow.slnx
+```
+
+1. 工具栏平台必须是 **`x64`**（项目只声明了 x64；选 `Any CPU` 会报「无法启动启动项目」，
+   下拉里没有 x64 就去「配置管理器 → 活动解决方案平台 → 新建 → x64」）；
+2. 启动档选 **`SnapFlow (dev)`**（`Properties/launchSettings.json` 里带的 `--dev`），按 **F5** ——
+   **不能 Ctrl+F5**，热重载依赖调试器附加；
+3. SnapFlow 是托盘应用，**F5 后不弹窗口**：`--dev` 会**自动把设置窗口打开**，托盘图标在右下角 `^` 里；
+4. 改任意 `.xaml` → `Ctrl+S` → 窗口 1 秒内更新；窗口顶部会浮出热重载工具条。
+
+> 「XAML 实时预览不可用」是另一个功能（Live Preview，要求窗口可见），不影响热重载，忽略即可。
+
+### 流程 B：`scripts\dev.ps1` 自动重启（改逻辑 / 不想开 VS 时用）
+
+```powershell
+.\scripts\dev.ps1            # 监视 + 自动构建 + 自动重启（默认）
+.\scripts\dev.ps1 -Mode run  # 只构建并启动，不监视
+.\scripts\dev.ps1 -NoBuild   # 只重启，用外部构建产物（IDE / CI）
+.\scripts\dev.ps1 -Mode build # 只构建
+```
+
+- **改了 `.cs` / `.xaml` / `.csproj` 保存即生效**：检测到改动 → `dotnet build` → 请旧进程优雅退出
+  （热键、托盘、SQLite、密码库会话都正常清理）→ 同步产物到 `.dev-run\app` → 带 `--dev` 重新拉起。
+- **构建期间旧版本一直可用**：产物写 `bin/`，程序跑 `.dev-run/app`，两者互不锁文件；
+  构建失败也不会打断正在运行的实例，改好保存会自动重来。只有「同步 + 重启」约 1~2 秒是空窗。
+- **窗口自动还原**：重启后会把刚才开着的「设置 / 剪贴板历史 / 密码库」重新打开，肉眼几乎无感。
+- **不与正式版互相拦截**：`--dev` 用独立单实例通道（互斥体 / 激活事件加 `.dev` 后缀），
+  启动时不会被托盘里的正式版挡在门外；优雅退出靠命名管道 `SnapFlow.Dev.<pid>` 完成。
+  但两者共用 `%LOCALAPPDATA%\SnapFlow` 的数据与全局快捷键，开发时建议先退出正式版。
+- 监视循环内按 `r` 手动触发重建，`q` 或 `Ctrl+C` 只停监视、不关程序。
+
+> 热重载桥（`src/Jietu/DevBridge.cs`）只在 `Debug` 编译里存在，`--dev` 也只在该配置下生效，
+> 正式发布包完全不受影响。
+
+### 热重载能改什么、不能改什么
+
+- **能热更**：增删/重排元素、改属性（颜色/边距/尺寸/文本）、改 Style 与资源字典、改 DataTemplate。
+- **要重启**（VS 工具条会提示）：新增类、新增 code-behind 事件处理器、改 `x:Class`、
+  x:Bind 表达式引用了新属性 —— 这些交给流程 B。
+- 另外 Debug → 窗口 里还有「实时可视化树」「实时属性资源管理器」，运行时直接拖属性、找到满意值再写回 XAML。
+
+---
+
 ## 📁 项目结构
 
 ```text
@@ -89,6 +147,7 @@ jietu/
 │  └─ 使用说明.txt            # 便携版随包说明
 ├─ tools/IconGen/             # 应用图标生成小工具
 ├─ scripts/fetch-nupkgs.ps1   # 离线 NuGet 依赖抓取脚本（填充 .nupkg-cache）
+├─ scripts/dev.ps1            # 开发热重载循环：保存 → 构建 → 优雅重启 → 还原窗口
 ├─ dist/                      # 最终发布产物（安装包 / 便携 ZIP / SHA256 / 发布说明）
 └─ .nupkg-cache/              # 离线 NuGet 缓存（构建依赖，勿提交）
 ```
@@ -96,6 +155,8 @@ jietu/
 > 三个产物目录的分工，只看这里就够了：
 > - `src/Jietu/bin/` —— 日常开发编译输出（`dotnet build`；csproj 已固定 RID，
 >   Debug/Release 都落在 `.../win-x64/` 一处），仅供开发调试，不要手动分发；
+> - `.dev-run/app/` —— `scripts/dev.ps1` 的运行目录（产物镜像，见上节「开发调试」，
+>   可随时删除，不含用户数据）；
 > - `artifacts/publish/` —— `build.ps1` 的自包含发布中间产物（打包后可删）；
 > - `dist/` —— 唯一对外分发的目录：安装包、便携 ZIP、SHA256SUMS、发布说明。
 >

@@ -24,6 +24,7 @@ public sealed partial class SettingsWindow : Window
 
     private string _regionHotkey = AppSettings.DefaultRegionHotkey;
     private string _historyHotkey = AppSettings.DefaultHistoryHotkey;
+    private string _vaultHotkey = AppSettings.DefaultVaultHotkey;
     private readonly List<string> _ignoredProcesses = [];
     private Button? _recordingButton;
 
@@ -95,8 +96,8 @@ public sealed partial class SettingsWindow : Window
 
             _regionHotkey = settings.RegionHotkey;
             _historyHotkey = settings.HistoryHotkey;
-            RenderKeycaps(RegionKeycapsHost, _regionHotkey);
-            RenderKeycaps(HistoryKeycapsHost, _historyHotkey);
+            _vaultHotkey = settings.VaultHotkey;
+            RenderHotkeyKeycaps();
 
             RetentionBox.Value = settings.RetentionDays;
             StartupSwitch.IsOn = settings.RunAtStartup;
@@ -167,13 +168,21 @@ public sealed partial class SettingsWindow : Window
         StartRecording(HistoryHotkeyBtn, HistoryKeycapsHost);
     }
 
+    private void OnVaultHotkeyClick(object sender, RoutedEventArgs e)
+    {
+        StartRecording(VaultHotkeyBtn, VaultKeycapsHost);
+    }
+
     private void StartRecording(Button btn, StackPanel host)
     {
         EndRecording();
         _recordingButton = btn;
-        // 模板里的自定义录制态：品牌色描边 + 呼吸光晕；另一颗按钮进入禁用态避免同时录制。
+        // 模板里的自定义录制态：品牌色描边 + 呼吸光晕；其余按钮进入禁用态避免同时录制。
         VisualStateManager.GoToState(btn, "Recording", true);
-        (btn == RegionHotkeyBtn ? HistoryHotkeyBtn : RegionHotkeyBtn).IsEnabled = false;
+        foreach (var other in HotkeyButtons)
+        {
+            other.IsEnabled = other != btn;
+        }
         host.Children.Clear();
         var recordingText = new TextBlock
         {
@@ -188,8 +197,10 @@ public sealed partial class SettingsWindow : Window
 
     private void EndRecording()
     {
-        RegionHotkeyBtn.IsEnabled = true;
-        HistoryHotkeyBtn.IsEnabled = true;
+        foreach (var button in HotkeyButtons)
+        {
+            button.IsEnabled = true;
+        }
         if (_recordingButton == null)
         {
             return;
@@ -199,6 +210,9 @@ public sealed partial class SettingsWindow : Window
         VisualStateManager.GoToState(_recordingButton, "Idle", true);
         _recordingButton = null;
     }
+
+    /// <summary>三颗可录制的热键按钮（截图 / 历史 / 密码库）：录制期间互斥禁用，结束整组恢复。</summary>
+    private Button[] HotkeyButtons => [RegionHotkeyBtn, HistoryHotkeyBtn, VaultHotkeyBtn];
 
     private void OnHotkeyDown(object sender, KeyRoutedEventArgs e)
     {
@@ -212,8 +226,7 @@ public sealed partial class SettingsWindow : Window
         {
             // 取消录制
             EndRecording();
-            RenderKeycaps(RegionKeycapsHost, _regionHotkey);
-            RenderKeycaps(HistoryKeycapsHost, _historyHotkey);
+            RenderHotkeyKeycaps();
             ShowError(null);
             return;
         }
@@ -235,8 +248,7 @@ public sealed partial class SettingsWindow : Window
         if (!HotkeyGesture.TryParse(formatted, out _, out var hotkeyError))
         {
             EndRecording();
-            RenderKeycaps(RegionKeycapsHost, _regionHotkey);
-            RenderKeycaps(HistoryKeycapsHost, _historyHotkey);
+            RenderHotkeyKeycaps();
             ShowError(string.IsNullOrWhiteSpace(hotkeyError) ? $"不支持把 {formatted} 设为快捷键。" : hotkeyError);
             return;
         }
@@ -249,10 +261,13 @@ public sealed partial class SettingsWindow : Window
         {
             _historyHotkey = formatted;
         }
+        else if (_recordingButton == VaultHotkeyBtn)
+        {
+            _vaultHotkey = formatted;
+        }
 
         EndRecording();
-        RenderKeycaps(RegionKeycapsHost, _regionHotkey);
-        RenderKeycaps(HistoryKeycapsHost, _historyHotkey);
+        RenderHotkeyKeycaps();
         ApplyAndSave();
     }
 
@@ -261,9 +276,17 @@ public sealed partial class SettingsWindow : Window
         EndRecording();
         _regionHotkey = AppSettings.DefaultRegionHotkey;
         _historyHotkey = AppSettings.DefaultHistoryHotkey;
+        _vaultHotkey = AppSettings.DefaultVaultHotkey;
+        RenderHotkeyKeycaps();
+        ApplyAndSave();
+    }
+
+    /// <summary>三个热键的键帽整组重绘：任一改动都要三行一起刷，避免只更新录到的那一行。</summary>
+    private void RenderHotkeyKeycaps()
+    {
         RenderKeycaps(RegionKeycapsHost, _regionHotkey);
         RenderKeycaps(HistoryKeycapsHost, _historyHotkey);
-        ApplyAndSave();
+        RenderKeycaps(VaultKeycapsHost, _vaultHotkey);
     }
 
     private void RenderKeycaps(StackPanel host, string hotkey)
@@ -315,7 +338,8 @@ public sealed partial class SettingsWindow : Window
     private void UpdateResetHotkeysState()
     {
         var changed = !string.Equals(_regionHotkey, AppSettings.DefaultRegionHotkey, StringComparison.OrdinalIgnoreCase)
-                      || !string.Equals(_historyHotkey, AppSettings.DefaultHistoryHotkey, StringComparison.OrdinalIgnoreCase);
+                      || !string.Equals(_historyHotkey, AppSettings.DefaultHistoryHotkey, StringComparison.OrdinalIgnoreCase)
+                      || !string.Equals(_vaultHotkey, AppSettings.DefaultVaultHotkey, StringComparison.OrdinalIgnoreCase);
         ResetHotkeysButton.IsEnabled = changed;
     }
 
@@ -553,8 +577,7 @@ public sealed partial class SettingsWindow : Window
         {
             RegionHotkey = _regionHotkey.Trim(),
             HistoryHotkey = _historyHotkey.Trim(),
-            // 密码库热键暂不在设置页录制（复用主窗口托盘配置）；原样携带避免被整体替换吞掉。
-            VaultHotkey = _host.Settings.VaultHotkey,
+            VaultHotkey = _vaultHotkey.Trim(),
             VaultLockMinutes = VaultLockBox.SelectedItem is ComboBoxItem lockItem && int.TryParse(lockItem.Tag?.ToString(), out var lockMinutes) ? lockMinutes : 5,
             VaultBrowserIntegration = _host.Settings.VaultBrowserIntegration,
             RetentionDays = (int)Math.Clamp(Math.Round(retention), AppSettings.MinRetentionDays, AppSettings.MaxRetentionDays),
@@ -582,8 +605,8 @@ public sealed partial class SettingsWindow : Window
             // 热键非法会让整页保存失败；回滚到已生效的值，避免一次误录把后面所有保存都锁死。
             _regionHotkey = _host.Settings.RegionHotkey;
             _historyHotkey = _host.Settings.HistoryHotkey;
-            RenderKeycaps(RegionKeycapsHost, _regionHotkey);
-            RenderKeycaps(HistoryKeycapsHost, _historyHotkey);
+            _vaultHotkey = _host.Settings.VaultHotkey;
+            RenderHotkeyKeycaps();
         }
 
         ShowError(error);
@@ -622,6 +645,7 @@ public sealed partial class SettingsWindow : Window
 
         if (!vault.Exists)
         {
+            SetVaultStatusTile("Amber");
             VaultStatusText.Text = "未创建（打开后按引导设置主密码）";
             VaultOpenButton.Content = "创建密码库";
             VaultHelloButton.IsEnabled = false;
@@ -629,8 +653,22 @@ public sealed partial class SettingsWindow : Window
             return;
         }
 
+        if (vault.IsBlocked)
+        {
+            // 阻断态（旧版/过新/损坏）与"已锁定"必须区分：前者输密码也没用，指路才是正事。
+            SetVaultStatusTile("Red");
+            VaultStatusText.Text = vault.Block.Kind == VaultBlockKind.LegacyV1
+                ? "旧版本密码库（本版本无法打开，文件已保留）"
+                : "密码库不可用（校验失败或版本过新）";
+            VaultOpenButton.Content = "查看处理方式";
+            VaultHelloButton.IsEnabled = false;
+            VaultHelloText.Text = "请先在密码库窗口中按提示处理这个库文件";
+            return;
+        }
+
         if (vault.IsUnlocked)
         {
+            SetVaultStatusTile("Green");
             VaultStatusText.Text = $"已解锁 · {vault.Data!.Entries.Count} 个条目";
             VaultOpenButton.Content = "打开密码库";
             VaultHelloButton.IsEnabled = true;
@@ -641,12 +679,24 @@ public sealed partial class SettingsWindow : Window
         }
         else
         {
+            SetVaultStatusTile("Red");
             VaultStatusText.Text = "已锁定";
             VaultOpenButton.Content = "打开密码库";
-            VaultHelloButton.IsEnabled = false;
+            // 关闭快速解锁只删 Hello 副本与系统凭据，不需要库密钥 —— 锁定时也放开，
+            // 这样「PIN 丢了 / 想立刻收回指纹解锁」不必先解锁。
+            VaultHelloButton.IsEnabled = vault.HasHelloBlob;
             VaultHelloButton.Content = vault.HasHelloBlob ? "关闭" : "启用";
-            VaultHelloText.Text = vault.HasHelloBlob ? "已启用快速解锁（当前已锁定）" : "解锁密码库后即可启用";
+            VaultHelloText.Text = vault.HasHelloBlob
+                ? "已启用 · 锁定时可用指纹 / PIN 解锁；关闭后只能用主密码"
+                : "解锁密码库后即可启用";
         }
+    }
+
+    /// <summary>状态釉块按库状态着色：未创建琥珀 / 已锁定红 / 已解锁绿（与语义色板同源）。</summary>
+    private void SetVaultStatusTile(string tone)
+    {
+        VaultStatusTile.Style = (Style)Root.Resources[$"RowTile{tone}Style"];
+        VaultStatusIcon.Foreground = (Brush)Root.Resources[$"RowGlyph{tone}Brush"];
     }
 
     private void OnOpenVault(object sender, RoutedEventArgs e)
@@ -658,9 +708,11 @@ public sealed partial class SettingsWindow : Window
     private async void OnToggleHello(object sender, RoutedEventArgs e)
     {
         var vault = _host.Vault;
-        if (!vault.IsUnlocked)
+        // 关闭方向不需要库密钥（只是删本地副本与系统凭据），只有启用才必须先解锁。
+        var disabling = vault.HasHelloBlob;
+        if (!disabling && !vault.IsUnlocked)
         {
-            ShowError("请先解锁密码库。");
+            ShowError("请先解锁密码库再启用快速解锁。");
             return;
         }
 
@@ -704,20 +756,63 @@ public sealed partial class SettingsWindow : Window
         }
 
         var enabled = BrowserIntegration.IsEnabled() && _host.Settings.VaultBrowserIntegration;
-        VaultBrowserStatus.Text = enabled ? "已启用（扩展关联时桌面端会确认）" : "未启用";
-        VaultBrowserEnableButton.IsEnabled = !enabled;
+        var configuredId = BrowserIntegration.GetConfiguredExtensionId();
+
+        // 回填已关联的 ID：输入框没在编辑中时才覆盖，避免打断正在输入的用户。
+        if (VaultExtIdBox.FocusState == FocusState.Unfocused && !string.IsNullOrEmpty(configuredId))
+        {
+            VaultExtIdBox.Text = configuredId;
+        }
+
+        VaultBrowserStatus.Text = (enabled, configuredId) switch
+        {
+            (true, not null) => "已启用 · 已关联扩展 ID",
+            (true, null) => "已启用，但尚未关联扩展 ID —— 浏览器扩展将无法连接，填入 ID 后点“启用”重新写入",
+            _ => "未启用",
+        };
+        VaultBrowserEnableButton.IsEnabled = !enabled || (!string.IsNullOrWhiteSpace(VaultExtIdBox.Text)
+            && !string.Equals(VaultExtIdBox.Text.Trim(), configuredId, StringComparison.OrdinalIgnoreCase));
         VaultBrowserDisableButton.IsEnabled = enabled;
+    }
+
+    /// <summary>兼容粘贴完整 chrome-extension:// 链接或带空白的 ID。</summary>
+    private static string NormalizeExtensionId(string input)
+    {
+        var id = input.Trim();
+        const string prefix = "chrome-extension://";
+        if (id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            id = id[prefix.Length..];
+        }
+
+        return id.TrimEnd('/').Trim();
     }
 
     private void OnVaultBrowserEnable(object sender, RoutedEventArgs e)
     {
-        var error = BrowserIntegration.Enable(VaultExtIdBox.Text);
+        var extensionId = NormalizeExtensionId(VaultExtIdBox.Text);
+
+        // Chromium 扩展 ID 是 32 个小写字母 a–p；空或格式不对都直接拦下，避免悄悄写入连不上的清单。
+        if (extensionId.Length == 0)
+        {
+            ShowError("请先在 chrome://extensions 复制扩展 ID 并填入。");
+            return;
+        }
+
+        if (extensionId.Length != 32 || !extensionId.All(c => c is >= 'a' and <= 'p'))
+        {
+            ShowError("扩展 ID 格式不正确：应为 32 位小写字母（a–p），可在 chrome://extensions 的扩展详情中复制。");
+            return;
+        }
+
+        var error = BrowserIntegration.Enable(extensionId);
         if (error != null)
         {
             ShowError(error);
             return;
         }
 
+        VaultExtIdBox.Text = extensionId;
         _host.Settings.VaultBrowserIntegration = true;
         ApplyAndSave();
         RefreshBrowserIntegrationState();

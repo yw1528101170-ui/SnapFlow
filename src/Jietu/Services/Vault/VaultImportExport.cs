@@ -16,6 +16,14 @@ public static class VaultImportExport
 {
     public static List<VaultCsvRow> ParseCsv(string text)
     {
+        // 内存闸门必须在解析**之前**：超大文件在解析阶段就会把内存吃掉，
+        // 后面的条目数上限校验根本走不到（那时已经 OOM 了）。
+        var bytes = Encoding.UTF8.GetByteCount(text);
+        if (bytes > VaultLimits.MaxCsvTextBytes)
+        {
+            throw new InvalidOperationException(VaultMessages.ImportTextTooLarge(bytes));
+        }
+
         var rows = ParseCsvRows(text);
         if (rows.Count == 0)
         {
@@ -94,16 +102,22 @@ public static class VaultImportExport
     /// <summary>
     /// 把条目合并进现有库（CSV 导入与备份恢复共用）：按「标题+用户名」忽略大小写去重，
     /// 已存在则跳过。返回新增条数。
+    ///
+    /// 实现改为**先建索引再比对**：原实现对每条都 `Any()` 扫全库，
+    /// 导入 5000 条时是 2500 万次字符串比较（秒级卡顿 + 大量临时分配）。
     /// </summary>
     public static int MergeInto(VaultData target, IEnumerable<VaultEntry> incoming)
     {
+        var index = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var existing in target.Entries)
+        {
+            index.Add(DedupeKey(existing.Title, existing.Username));
+        }
+
         var added = 0;
         foreach (var entry in incoming)
         {
-            var exists = target.Entries.Any(en =>
-                en.Title.Equals(entry.Title, StringComparison.OrdinalIgnoreCase)
-                && en.Username.Equals(entry.Username, StringComparison.OrdinalIgnoreCase));
-            if (!exists)
+            if (index.Add(DedupeKey(entry.Title, entry.Username)))
             {
                 target.Entries.Add(entry);
                 added++;
@@ -111,6 +125,58 @@ public static class VaultImportExport
         }
 
         return added;
+    }
+
+    /// <summary>
+    /// 去重键。用 NUL 分隔两个字段：否则「ab + c」与「a + bc」会被误判成同一条。
+    /// </summary>
+    private static string DedupeKey(string title, string username) => title + "\0" + username;
+
+    /// <summary>
+    /// 导入上限校验（解析后、写入前调用）。返回 null 表示通过，否则返回可直接展示的原因。
+    ///
+    /// 语义是**整体拒绝**：任何一条不合格就一条都不写库。截断是最糟的实现——
+    /// 用户会以为导进去了，实际丢了一半密码。
+    /// </summary>
+    public static string? ValidateImportRows(IReadOnlyList<VaultCsvRow> rows)
+    {
+        if (rows.Count > VaultLimits.MaxImportEntries)
+        {
+            return VaultMessages.ImportTooManyEntries(rows.Count);
+        }
+
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            // 行号按用户在 Excel 里看到的算：+1 表头，+1 从 1 数起。
+            var rowNumber = i + 2;
+            if (row.Name.Length > VaultLimits.MaxFieldChars)
+            {
+                return VaultMessages.ImportFieldTooLong(rowNumber, "标题");
+            }
+
+            if (row.Url.Length > VaultLimits.MaxFieldChars)
+            {
+                return VaultMessages.ImportFieldTooLong(rowNumber, "网址");
+            }
+
+            if (row.Username.Length > VaultLimits.MaxFieldChars)
+            {
+                return VaultMessages.ImportFieldTooLong(rowNumber, "用户名");
+            }
+
+            if (row.Password.Length > VaultLimits.MaxFieldChars)
+            {
+                return VaultMessages.ImportFieldTooLong(rowNumber, "密码");
+            }
+
+            if (row.Notes.Length > VaultLimits.MaxFieldChars)
+            {
+                return VaultMessages.ImportFieldTooLong(rowNumber, "备注");
+            }
+        }
+
+        return null;
     }
 
     /// <summary>明文 CSV 导出（RFC 4180 转义）。调用方必须先向用户二次确认。</summary>
@@ -127,25 +193,50 @@ public static class VaultImportExport
         return sb.ToString();
     }
 
-    /// <summary>加密备份：与库容器同格式，但用独立 salt/nonce 和备份口令派生密钥。</summary>
+    /// <summary>
+    /// 加密备份：与库容器**同格式**（v2，头参与 AAD），但用独立 salt/nonce 和备份口令派生密钥。
+    /// 同格式的意义：恢复时不需要第二套解析逻辑，且"备份里能读出来的东西"与库里完全一致
+    /// （含回收站与历史）。
+    /// </summary>
     public static byte[] BuildEncryptedBackup(VaultData data, string backupPassword)
     {
-        var header = VaultHeader.NewHeader();
-        var key = VaultCrypto.DeriveKey(Encoding.UTF8.GetBytes(backupPassword), header);
-        var body = VaultCrypto.Seal(header, key, data);
-        return [.. header.ToBytes(), .. body];
+        var header = VaultKdfPolicy.NewVaultHeader();
+        var passwordBytes = Encoding.UTF8.GetBytes(backupPassword);
+        VaultMemoryDebug.Track("backup-password-utf8", passwordBytes);
+        VaultKey? key = null;
+        try
+        {
+            key = VaultCrypto.DeriveKey(passwordBytes, header);
+            return VaultCrypto.SealFile(data, header, key, out _);
+        }
+        finally
+        {
+            // 备份口令同样是口令：离开作用域必须清零（含派生/加密抛异常的路径）。
+            CryptographicOperations.ZeroMemory(passwordBytes);
+            key?.Dispose();
+        }
     }
 
-    /// <summary>解析加密备份；口令错误 / 文件损坏返回 null。</summary>
-    public static VaultData? OpenEncryptedBackup(byte[] raw, string backupPassword)
+    /// <summary>
+    /// 恢复加密备份。与库文件共用同一套分类（<see cref="VaultStore.ClassifyBytes"/>）：
+    /// v1 备份与更高版本的备份都明确拒绝，而不是"尽量解一下试试"。
+    /// 口令错误返回 <see cref="VaultOpenStatus.AuthenticationFailed"/>，由 UI 提示重输。
+    /// </summary>
+    public static VaultOpenResult OpenEncryptedBackup(byte[] raw, string backupPassword)
     {
-        if (!VaultHeader.TryParse(raw, out var header))
-        {
-            return null;
-        }
+        ArgumentNullException.ThrowIfNull(raw);
 
-        var key = VaultCrypto.DeriveKey(Encoding.UTF8.GetBytes(backupPassword), header);
-        return VaultCrypto.Open(header, key, raw.AsSpan(VaultHeader.HeaderLength));
+        var read = VaultStore.ClassifyBytes(raw);
+        var passwordBytes = Encoding.UTF8.GetBytes(backupPassword);
+        VaultMemoryDebug.Track("backup-password-utf8-open", passwordBytes);
+        try
+        {
+            return VaultOpenPipeline.Open(read, passwordBytes);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(passwordBytes);
+        }
     }
 
     // ---------------- CSV 基础解析（RFC 4180：引号、逗号、换行转义） ----------------

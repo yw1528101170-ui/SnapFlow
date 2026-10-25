@@ -107,11 +107,38 @@ public sealed class VaultImportExportTests
             Entries = [new VaultEntry { Title = "t", Username = "u", Password = "p" }],
         };
         var blob = await Task.Run(() => VaultImportExport.BuildEncryptedBackup(data, "backup pass"));
-        var restored = await Task.Run(() => VaultImportExport.OpenEncryptedBackup(blob, "backup pass"));
-        Assert.NotNull(restored);
-        Assert.Equal("t", restored!.Entries[0].Title);
 
+        var restored = await Task.Run(() => VaultImportExport.OpenEncryptedBackup(blob, "backup pass"));
+        Assert.True(restored.Ok);
+        Assert.Equal("t", restored.Data!.Entries[0].Title);
+
+        // 备份口令错必须归到"认证失败"（可重试），不能和"文件损坏"混为一谈。
         var wrong = await Task.Run(() => VaultImportExport.OpenEncryptedBackup(blob, "wrong"));
-        Assert.Null(wrong);
+        Assert.False(wrong.Ok);
+        Assert.Equal(VaultOpenStatus.AuthenticationFailed, wrong.Status);
+        Assert.Null(wrong.Data);
+    }
+
+    /// <summary>
+    /// 备份与库文件共用同一套格式判定：v1 时代的加密备份必须被明确拒绝，
+    /// 而不是"尽量解一下然后写回"（写回会静默丢掉新版本不认识的字段）。
+    /// </summary>
+    [Fact]
+    public void OpenEncryptedBackup_RejectsLegacyV1Backup()
+    {
+        var legacy = LegacyV1Fixture.CreateBackup();
+
+        var result = VaultImportExport.OpenEncryptedBackup(legacy, LegacyV1Fixture.Password);
+
+        Assert.False(result.Ok);
+        Assert.Equal(VaultOpenStatus.LegacyFormat, result.Status);
+    }
+
+    [Fact]
+    public void OpenEncryptedBackup_RejectsGarbageWithoutThrowing()
+    {
+        var result = VaultImportExport.OpenEncryptedBackup("not a vault"u8.ToArray(), "whatever");
+        Assert.False(result.Ok);
+        Assert.Equal(VaultOpenStatus.UnknownFormat, result.Status);
     }
 }

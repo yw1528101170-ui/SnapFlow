@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/Jietu/Jietu.csproj" />
+    <Project Path="src/Jietu/Jietu.csproj">
+      <Platform Solution="Debug|*" Project="x64" />
+    </Project>
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Jietu.Tests/Jietu.Tests.csproj" />
