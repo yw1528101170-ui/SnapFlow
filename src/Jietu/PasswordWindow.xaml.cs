@@ -252,6 +252,234 @@ public sealed partial class PasswordWindow : Window
         _host.Toast.Show("密码库已锁定");
     }
 
+    // ---------------- 导入 / 导出 / 备份 / 改主密码 ----------------
+
+    private async void OnImportCsv(object sender, RoutedEventArgs e)
+    {
+        if (!_vault.IsUnlocked)
+        {
+            return;
+        }
+
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker
+            {
+                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+            };
+            picker.FileTypeFilter.Add(".csv");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSingleFileAsync();
+            if (file == null)
+            {
+                return;
+            }
+
+            var text = await Windows.Storage.FileIO.ReadTextAsync(file);
+            var rows = VaultImportExport.ParseCsv(text);
+            var entries = VaultImportExport.ToEntries(rows);
+            var data = _vault.Data!;
+            var added = 0;
+            foreach (var entry in entries)
+            {
+                // 按「标题+用户名」去重：重复导入同一份导出文件不会翻倍。
+                var exists = data.Entries.Any(en =>
+                    en.Title.Equals(entry.Title, StringComparison.OrdinalIgnoreCase)
+                    && en.Username.Equals(entry.Username, StringComparison.OrdinalIgnoreCase));
+                if (!exists)
+                {
+                    data.Entries.Add(entry);
+                    added++;
+                }
+            }
+
+            if (added > 0)
+            {
+                _vault.Save();
+                RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+            }
+
+            _host.Toast.Show($"导入完成：新增 {added} 条，跳过重复 {entries.Count - added} 条");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+            _host.Toast.Show("导入失败：" + ex.Message);
+        }
+    }
+
+    private async void OnBackupVault(object sender, RoutedEventArgs e)
+    {
+        if (!_vault.IsUnlocked)
+        {
+            return;
+        }
+
+        var panel = new StackPanel { Spacing = 10 };
+        var hint = new TextBlock
+        {
+            Text = "备份文件将用下面的备份口令独立加密（与主密码无关）。口令丢失将无法恢复备份。",
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+        };
+        var box = new Microsoft.UI.Xaml.Controls.PasswordBox { PlaceholderText = "备份口令（至少 8 位）" };
+        var confirm = new Microsoft.UI.Xaml.Controls.PasswordBox { PlaceholderText = "再输入一次备份口令" };
+        panel.Children.Add(hint);
+        panel.Children.Add(box);
+        panel.Children.Add(confirm);
+
+        var dialog = await ShowVaultDialog("加密备份", panel, "导出备份");
+        if (dialog != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        if (box.Password.Length < 8)
+        {
+            _host.Toast.Show("备份口令至少 8 位");
+            return;
+        }
+
+        if (box.Password != confirm.Password)
+        {
+            _host.Toast.Show("两次输入的备份口令不一致");
+            return;
+        }
+
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FileSavePicker
+            {
+                SuggestedFileName = $"snapflow-vault-{DateTime.Now:yyyyMMdd}",
+                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+            };
+            picker.FileTypeChoices.Add("SnapFlow 加密备份", [".spvault"]);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSaveFileAsync();
+            if (file == null)
+            {
+                return;
+            }
+
+            var blob = await Task.Run(() => VaultImportExport.BuildEncryptedBackup(_vault.Data!, box.Password));
+            await Windows.Storage.FileIO.WriteBytesAsync(file, blob);
+            _host.Toast.Show("备份已导出（加密）");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+            _host.Toast.Show("备份失败：" + ex.Message);
+        }
+    }
+
+    private async void OnExportCsv(object sender, RoutedEventArgs e)
+    {
+        if (!_vault.IsUnlocked)
+        {
+            return;
+        }
+
+        var res = NativeMethods.MessageBox(
+            WinRT.Interop.WindowNative.GetWindowHandle(this),
+            "即将导出包含全部密码明文的 CSV 文件。\n\n任何拿到这个文件的人都能直接读出所有密码，请确认存放位置安全。",
+            "SnapFlow - 明文导出",
+            NativeMethods.MbOkCancel | NativeMethods.MbIconQuestion | NativeMethods.MbDefButton2);
+        if (res != NativeMethods.IdOk)
+        {
+            return;
+        }
+
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FileSavePicker
+            {
+                SuggestedFileName = $"snapflow-passwords-{DateTime.Now:yyyyMMdd}",
+                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+            };
+            picker.FileTypeChoices.Add("CSV 文件", [".csv"]);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSaveFileAsync();
+            if (file == null)
+            {
+                return;
+            }
+
+            var csv = await Task.Run(() => VaultImportExport.BuildCsv(_vault.Data!.Entries));
+            await Windows.Storage.FileIO.WriteTextAsync(file, csv);
+            _host.Toast.Show("已明文导出，请立即妥善保管或删除");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+            _host.Toast.Show("导出失败：" + ex.Message);
+        }
+    }
+
+    private async void OnChangeMasterPassword(object sender, RoutedEventArgs e)
+    {
+        if (!_vault.IsUnlocked)
+        {
+            return;
+        }
+
+        var panel = new StackPanel { Spacing = 10 };
+        var hint = new TextBlock
+        {
+            Text = "整库将用新主密码重新加密，Windows Hello 快速解锁会被禁用（需重新启用）。",
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+        };
+        var newBox = new Microsoft.UI.Xaml.Controls.PasswordBox { PlaceholderText = "新主密码（至少 12 位）" };
+        var confirmBox = new Microsoft.UI.Xaml.Controls.PasswordBox { PlaceholderText = "再输入一次新主密码" };
+        panel.Children.Add(hint);
+        panel.Children.Add(newBox);
+        panel.Children.Add(confirmBox);
+
+        var dialog = await ShowVaultDialog("修改主密码", panel, "确认修改");
+        if (dialog != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        if (newBox.Password.Length < 12)
+        {
+            _host.Toast.Show("主密码至少 12 位");
+            return;
+        }
+
+        if (newBox.Password != confirmBox.Password)
+        {
+            _host.Toast.Show("两次输入的密码不一致");
+            return;
+        }
+
+        try
+        {
+            await Task.Run(() => _vault.ChangeMasterPassword(newBox.Password));
+            _host.Toast.Show("主密码已修改");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+            _host.Toast.Show("修改失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>窗口内模态对话框。窗口可能处于隐藏态，隐藏时退回 MessageBox 提示。</summary>
+    private async Task<ContentDialogResult> ShowVaultDialog(string title, UIElement content, string primaryText)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = content,
+            PrimaryButtonText = primaryText,
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = Content.XamlRoot,
+        };
+        return await dialog.ShowAsync();
+    }
+
     // ---------------- 列表 ----------------
 
     private void RefreshList(string? query)
