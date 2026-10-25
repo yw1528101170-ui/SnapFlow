@@ -76,6 +76,30 @@ public sealed class VaultImportExportTests
     }
 
     [Fact]
+    public void MergeInto_SkipsDuplicatesByTitleAndUsername()
+    {
+        var data = new VaultData
+        {
+            Entries = [new VaultEntry { Title = "GitHub", Username = "alice", Password = "old" }],
+        };
+        var incoming = new[]
+        {
+            new VaultEntry { Title = "github", Username = "Alice", Password = "new" },   // 标题+用户名忽略大小写重复
+            new VaultEntry { Title = "GitHub", Username = "bob", Password = "p2" },      // 同标题不同用户名 → 新增
+            new VaultEntry { Title = "Example", Username = "", Password = "p3" },        // 全新条目
+        };
+
+        Assert.Equal(2, VaultImportExport.MergeInto(data, incoming));
+        Assert.Equal(3, data.Entries.Count);
+        // 重复条目不得覆盖已有密码。
+        Assert.Equal("old", data.Entries[0].Password);
+
+        // 再次合并同一批全部跳过：导入同一份文件不会翻倍。
+        Assert.Equal(0, VaultImportExport.MergeInto(data, incoming));
+        Assert.Equal(3, data.Entries.Count);
+    }
+
+    [Fact]
     public async Task EncryptedBackup_RoundTripAndWrongPassword()
     {
         var data = new VaultData

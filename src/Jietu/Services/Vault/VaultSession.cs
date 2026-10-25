@@ -13,7 +13,6 @@ namespace Jietu;
 public sealed class VaultSession : IDisposable
 {
     private readonly string _vaultPath;
-    private readonly DispatcherQueue _queue;
     private readonly Func<AppSettings> _settings;
     private readonly DispatcherQueueTimer _idleTimer;
 
@@ -28,7 +27,6 @@ public sealed class VaultSession : IDisposable
     public VaultSession(DispatcherQueue dispatcherQueue, Func<AppSettings> settings)
     {
         _vaultPath = AppPaths.VaultFile;
-        _queue = dispatcherQueue;
         _settings = settings;
         _idleTimer = dispatcherQueue.CreateTimer();
         _idleTimer.IsRepeating = true;
@@ -50,21 +48,6 @@ public sealed class VaultSession : IDisposable
     /// <summary>当前解密数据；锁定状态返回 null。只在 UI 线程读取。</summary>
     public VaultData? Data => _data;
 
-    /// <summary>库文件的 KDF 头（锁定状态也可读：解锁窗口据此展示参数）。</summary>
-    public bool TryReadHeader(out VaultHeader header)
-    {
-        var raw = VaultStore.Load(_vaultPath);
-        var parsed = VaultStore.Parse(raw);
-        if (parsed == null)
-        {
-            header = default;
-            return false;
-        }
-
-        header = parsed.Value.Header;
-        return true;
-    }
-
     /// <summary>解锁（Argon2 在线程池跑，不阻塞 UI）。失败返回可展示的错误文本。</summary>
     public async Task<(bool Ok, string? Error)> TryUnlockAsync(string masterPassword)
     {
@@ -73,7 +56,7 @@ public sealed class VaultSession : IDisposable
             return (true, null);
         }
 
-        var parsed = VaultStore.Parse(VaultStore.Load(_vaultPath));
+        var parsed = VaultStore.Parse(_vaultPath, VaultStore.Load(_vaultPath));
         if (parsed == null)
         {
             return (false, VaultStore.LastRecoveryMessage ?? "密码库文件无法读取。");
@@ -129,7 +112,7 @@ public sealed class VaultSession : IDisposable
             return true;
         }
 
-        var parsed = VaultStore.Parse(VaultStore.Load(_vaultPath));
+        var parsed = VaultStore.Parse(_vaultPath, VaultStore.Load(_vaultPath));
         if (parsed == null)
         {
             error = VaultStore.LastRecoveryMessage ?? "密码库文件无法读取。";
@@ -206,7 +189,9 @@ public sealed class VaultSession : IDisposable
 
     public void TouchActivity() => _lastActivity = DateTimeOffset.UtcNow;
 
-    /// <summary>立即锁定并清场：清密钥、清数据引用、停计时器。幂等。</summary>
+    /// <summary>立即锁定并清场：清密钥、清数据引用、停计时器。幂等。
+    /// Hello 副本保留（包裹密钥绑定本机 TPM 的 Hello 凭据，拷走也无法离线解密），
+    /// 仅在修改主密码或用户显式关闭快速解锁时删除。</summary>
     public void Lock()
     {
         if (_data == null && _key == null)
@@ -222,14 +207,13 @@ public sealed class VaultSession : IDisposable
         }
 
         _idleTimer.Stop();
-        TryDeleteHelloBlob();
         Locked?.Invoke();
     }
 
     /// <summary>Windows Hello 副本是否可用（有 hello.blob 且库存在）。</summary>
     public bool HasHelloBlob => File.Exists(AppPaths.HelloBlob);
 
-    /// <summary>启用 Hello 后由 HelloUnlock 写入包裹密钥副本；锁定时主动删除（防离线离机攻击面）。</summary>
+    /// <summary>启用 Hello 后由 HelloUnlock 写入包裹密钥副本；改主密码/关闭快速解锁时删除。</summary>
     public void StoreHelloBlob(byte[] wrappedKey) => File.WriteAllBytes(AppPaths.HelloBlob, wrappedKey);
 
     public byte[]? ReadHelloBlob()
@@ -245,7 +229,11 @@ public sealed class VaultSession : IDisposable
         }
     }
 
-    private void TryDeleteHelloBlob()
+    /// <summary>关闭快速解锁：删除 Hello 副本与系统凭据（设置页调用）。尽力而为。</summary>
+    public async Task DisableHelloAsync() => await HelloUnlock.DisableAsync();
+
+    /// <summary>删除 Hello 副本文件（改主密码后旧密钥的包裹副本必然失效）。</summary>
+    private static void TryDeleteHelloBlob()
     {
         try
         {
@@ -256,7 +244,7 @@ public sealed class VaultSession : IDisposable
         }
         catch
         {
-            // 删不掉不影响锁定本身；下次改密码/重新保存时会再清。
+            // 删不掉不影响主流程；下次改密码/关闭快速解锁时会再清。
         }
     }
 
@@ -298,12 +286,12 @@ public sealed class VaultSession : IDisposable
         }
     }
 
-    /// <summary>内部校验：主密码长度 8+。强度提示由 UI 层用熵估计给出。</summary>
+    /// <summary>内部校验：主密码长度 12+，与创建/修改界面的要求一致。强度提示由 UI 层用熵估计给出。</summary>
     private static void ValidateMasterPassword(string password)
     {
-        if (string.IsNullOrEmpty(password) || password.Length < 8)
+        if (string.IsNullOrEmpty(password) || password.Length < 12)
         {
-            throw new ArgumentException("主密码至少需要 8 个字符。");
+            throw new ArgumentException("主密码至少需要 12 个字符。");
         }
     }
 }

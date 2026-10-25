@@ -938,7 +938,7 @@
                                                        Text="解锁密码库后即可启用"/>
                                         </StackPanel>
                                         <Button x:Name="VaultHelloButton" Grid.Column="2" Content="启用"
-                                                CornerRadius="7" Click="OnEnableHello" VerticalAlignment="Center" IsEnabled="False"/>
+                                                CornerRadius="7" Click="OnToggleHello" VerticalAlignment="Center" IsEnabled="False"/>
                                     </Grid>
                                 </StackPanel>
                             </Border>

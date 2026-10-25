@@ -279,10 +279,17 @@ internal sealed class VaultBridge : IDisposable
     }
 
     private string Status()
-        => Json(new { type = "status", exists = _vault.Exists, locked = !_vault.IsUnlocked });
+        => Json(new { type = "status", exists = _vault.Exists, locked = !_vault.IsUnlocked, integration = _settings().VaultBrowserIntegration });
 
     private string GetLogins(JsonElement root)
     {
+        // 集成开关必须在每条取凭据的请求上生效：只在配对时检查的话，
+        // 用户关闭集成后已配对的扩展仍能继续读密码。
+        if (!_settings().VaultBrowserIntegration)
+        {
+            return Error("integration-disabled");
+        }
+
         if (!_vault.IsUnlocked)
         {
             return Json(new { type = "logins", locked = true, entries = Array.Empty<object>() });

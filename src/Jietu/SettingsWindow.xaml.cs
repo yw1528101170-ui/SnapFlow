@@ -610,6 +610,7 @@ public sealed partial class SettingsWindow : Window
         var minutes = _host.Settings.VaultLockMinutes;
         VaultLockBox.SelectedIndex = minutes switch
         {
+            <= 0 => 5,
             <= 1 => 0,
             <= 5 => 1,
             <= 15 => 2,
@@ -632,15 +633,19 @@ public sealed partial class SettingsWindow : Window
         {
             VaultStatusText.Text = $"已解锁 · {vault.Data!.Entries.Count} 个条目";
             VaultOpenButton.Content = "打开密码库";
-            VaultHelloButton.IsEnabled = !vault.HasHelloBlob;
-            VaultHelloText.Text = vault.HasHelloBlob ? "已启用（锁定时自动失效，解锁后自动恢复）" : "用指纹/PIN 免输主密码";
+            VaultHelloButton.IsEnabled = true;
+            VaultHelloButton.Content = vault.HasHelloBlob ? "关闭" : "启用";
+            VaultHelloText.Text = vault.HasHelloBlob
+                ? "已启用：锁定后仍可用指纹 / PIN 快速解锁（修改主密码后需重新启用）"
+                : "用指纹/PIN 免输主密码（锁定后也可用）";
         }
         else
         {
             VaultStatusText.Text = "已锁定";
             VaultOpenButton.Content = "打开密码库";
             VaultHelloButton.IsEnabled = false;
-            VaultHelloText.Text = vault.HasHelloBlob ? "解锁密码库后可用" : "解锁密码库后即可启用";
+            VaultHelloButton.Content = vault.HasHelloBlob ? "关闭" : "启用";
+            VaultHelloText.Text = vault.HasHelloBlob ? "已启用快速解锁（当前已锁定）" : "解锁密码库后即可启用";
         }
     }
 
@@ -650,19 +655,24 @@ public sealed partial class SettingsWindow : Window
         Dismiss();
     }
 
-    private async void OnEnableHello(object sender, RoutedEventArgs e)
+    private async void OnToggleHello(object sender, RoutedEventArgs e)
     {
         var vault = _host.Vault;
         if (!vault.IsUnlocked)
         {
-            ShowError("请先解锁密码库再启用快速解锁。");
+            ShowError("请先解锁密码库。");
             return;
         }
 
         VaultHelloButton.IsEnabled = false;
         try
         {
-            if (!await vault.EnableHelloAsync())
+            if (vault.HasHelloBlob)
+            {
+                await vault.DisableHelloAsync();
+                _host.Toast.Show("Windows Hello 快速解锁已关闭");
+            }
+            else if (!await vault.EnableHelloAsync())
             {
                 ShowError("启用快速解锁失败：可能已在系统弹窗中取消。");
             }
@@ -670,7 +680,7 @@ public sealed partial class SettingsWindow : Window
         catch (Exception ex)
         {
             Log.Error(ex);
-            ShowError("启用快速解锁失败：" + ex.Message);
+            ShowError("快速解锁操作失败：" + ex.Message);
         }
         finally
         {

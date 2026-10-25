@@ -150,7 +150,7 @@ public sealed class VaultCryptoTests
             var (header, _, body) = Sealed();
             await Task.Run(() => VaultStore.Save(path, header, body));
             var raw = VaultStore.Load(path);
-            var parsed = VaultStore.Parse(raw);
+            var parsed = VaultStore.Parse(path, raw);
             Assert.NotNull(parsed);
             Assert.Equal(header.ToBytes(), parsed!.Value.Header.ToBytes());
             Assert.Equal(body, parsed.Value.Body);
@@ -169,12 +169,23 @@ public sealed class VaultCryptoTests
         try
         {
             await File.WriteAllBytesAsync(path, "not a vault at all"u8.ToArray());
-            Assert.Null(VaultStore.Parse(VaultStore.Load(path)));
+            Assert.Null(VaultStore.Parse(path, VaultStore.Load(path)));
             Assert.NotNull(VaultStore.LastRecoveryMessage);
+            Assert.Contains(".corrupt-", VaultStore.LastRecoveryMessage);
+
+            // 原文件必须被复制为 .corrupt-<时间戳> 备份，且原文件保留在原地。
+            var backups = Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".corrupt-*");
+            Assert.Single(backups);
+            Assert.Equal("not a vault at all"u8.ToArray(), await File.ReadAllBytesAsync(backups[0]));
+            Assert.True(File.Exists(path));
         }
         finally
         {
-            File.Delete(path);
+            foreach (var file in Directory.GetFiles(
+                         Path.GetDirectoryName(path)!, Path.GetFileName(path) + "*"))
+            {
+                File.Delete(file);
+            }
         }
     }
 

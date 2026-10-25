@@ -1016,7 +1016,7 @@ internal static class SelfTest
             {
                 VaultStore.Save(path, header, body);
                 var raw = VaultStore.Load(path);
-                Expect(VaultStore.Parse(raw) != null, "vault 文件落盘解析", failures);
+                Expect(VaultStore.Parse(path, raw) != null, "vault 文件落盘解析", failures);
             }
             finally
             {

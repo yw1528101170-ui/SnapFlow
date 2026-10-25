@@ -31,6 +31,15 @@ function setHint(html) {
     el.innerHTML = html;
 }
 
+// 动态内容（错误消息等）拼进 innerHTML 前必须转义：popup 是特权页面。
+const esc = (s) => String(s).replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function notEnabledHint() {
+    setDot("warn", "未启用");
+    setHint("在 SnapFlow 设置 → 密码库 中启用「浏览器自动填充」，并确认已填写本扩展 ID。");
+}
+
 async function pairIfNeeded(token) {
     // 未关联时触发桌面端确认弹窗；用户批准后 get-logins 即可用。
     const extName = chrome.i18n?.getMessage?.("extName") || "Chrome 扩展";
@@ -45,19 +54,40 @@ async function fetchLogins(url) {
         status = await sendNative({ type: "status" });
     } catch (err) {
         setDot("err", "未连接");
-        setHint("无法连接 SnapFlow 桌面端。请确认：<br>1. SnapFlow 正在运行<br>2. 设置 → 密码库 → 浏览器自动填充已启用<br><code>" + String(err.message || err).slice(0, 120) + "</code>");
+        setHint("无法连接 SnapFlow 桌面端。请确认：<br>1. SnapFlow 正在运行<br>2. 设置 → 密码库 → 浏览器自动填充已启用<br><code>" + esc(String(err.message || err).slice(0, 120)) + "</code>");
         return null;
     }
-    if (status.type === "error" && status.reason === "integration-disabled") {
-        setDot("warn", "未启用");
-        setHint("在 SnapFlow 设置 → 密码库中启用浏览器自动填充，并填写本扩展 ID。");
+    if ((status.type === "error" && status.reason === "integration-disabled") || status.integration === false) {
+        notEnabledHint();
         return null;
     }
 
-    let result = await sendNative({ type: "get-logins", token, url });
+    let result;
+    try {
+        result = await sendNative({ type: "get-logins", token, url });
+    } catch (err) {
+        setDot("err", "未连接");
+        setHint("请求中断：<code>" + esc(String(err.message || err).slice(0, 120)) + "</code>");
+        return null;
+    }
+    if (result.type === "error" && result.reason === "integration-disabled") {
+        notEnabledHint();
+        return null;
+    }
     if (result.type === "error" && result.reason === "not-paired") {
         // 首次连接：走关联确认（桌面端会弹窗）。
-        const paired = await pairIfNeeded(token);
+        let paired;
+        try {
+            paired = await pairIfNeeded(token);
+        } catch (err) {
+            setDot("err", "未连接");
+            setHint("关联请求中断：<code>" + esc(String(err.message || err).slice(0, 120)) + "</code>");
+            return null;
+        }
+        if (paired.type === "error" && paired.reason === "integration-disabled") {
+            notEnabledHint();
+            return null;
+        }
         if (paired.type !== "hello-result" || !paired.ok) {
             setDot("warn", "未关联");
             setHint("关联被拒绝或超时。重试：重新打开本弹窗。");
@@ -68,7 +98,7 @@ async function fetchLogins(url) {
 
     if (result.type !== "logins") {
         setDot("err", "错误");
-        setHint("桌面端返回异常：<code>" + JSON.stringify(result).slice(0, 140) + "</code>");
+        setHint("桌面端返回异常：<code>" + esc(JSON.stringify(result).slice(0, 140)) + "</code>");
         return null;
     }
 
@@ -122,16 +152,21 @@ function renderEntries(entries, tabId) {
 }
 
 async function init() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.url || !/^https?:/i.test(tab.url)) {
-        setDot("warn", "不可用");
-        document.getElementById("list").textContent = "当前页面不支持填充（仅 http/https）";
-        return;
-    }
+    try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.url || !/^https?:/i.test(tab.url)) {
+            setDot("warn", "不可用");
+            document.getElementById("list").textContent = "当前页面不支持填充（仅 http/https）";
+            return;
+        }
 
-    const entries = await fetchLogins(tab.url);
-    if (entries !== null) {
-        renderEntries(entries, tab.id);
+        const entries = await fetchLogins(tab.url);
+        if (entries !== null) {
+            renderEntries(entries, tab.id);
+        }
+    } catch (err) {
+        setDot("err", "错误");
+        setHint("弹窗初始化失败：<code>" + esc(String(err && err.message || err).slice(0, 120)) + "</code>");
     }
 }
 

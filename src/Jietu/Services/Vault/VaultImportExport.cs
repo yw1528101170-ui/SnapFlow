@@ -91,6 +91,28 @@ public static class VaultImportExport
         return entries;
     }
 
+    /// <summary>
+    /// 把条目合并进现有库（CSV 导入与备份恢复共用）：按「标题+用户名」忽略大小写去重，
+    /// 已存在则跳过。返回新增条数。
+    /// </summary>
+    public static int MergeInto(VaultData target, IEnumerable<VaultEntry> incoming)
+    {
+        var added = 0;
+        foreach (var entry in incoming)
+        {
+            var exists = target.Entries.Any(en =>
+                en.Title.Equals(entry.Title, StringComparison.OrdinalIgnoreCase)
+                && en.Username.Equals(entry.Username, StringComparison.OrdinalIgnoreCase));
+            if (!exists)
+            {
+                target.Entries.Add(entry);
+                added++;
+            }
+        }
+
+        return added;
+    }
+
     /// <summary>明文 CSV 导出（RFC 4180 转义）。调用方必须先向用户二次确认。</summary>
     public static string BuildCsv(IEnumerable<VaultEntry> entries)
     {

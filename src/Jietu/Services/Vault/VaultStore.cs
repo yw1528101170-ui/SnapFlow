@@ -34,10 +34,12 @@ public static class VaultStore
     }
 
     /// <summary>
-    /// 解析文件为「头 + 密文体」。文件损坏（头不合法）时备份原文件并返回 null。
+    /// 解析文件为「头 + 密文体」。文件损坏（头不合法）时先把原文件复制为
+    /// <c>.corrupt-时间戳</c> 备份再返回 null——原文件留在原地不动（Exists 仍为真，
+    /// 不会把用户误导进「创建新库」流程），用户可从备份或加密备份文件抢救数据。
     /// 注意密文体解不开不是本层的职责——那是解锁流程的主密码错误路径。
     /// </summary>
-    public static (VaultHeader Header, byte[] Body)? Parse(byte[]? raw)
+    public static (VaultHeader Header, byte[] Body)? Parse(string path, byte[]? raw)
     {
         LastRecoveryMessage = null;
         if (raw == null)
@@ -47,7 +49,19 @@ public static class VaultStore
 
         if (!VaultHeader.TryParse(raw, out var header))
         {
-            LastRecoveryMessage = "密码库文件头损坏。";
+            var backup = path + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            try
+            {
+                File.Copy(path, backup, overwrite: true);
+                LastRecoveryMessage = $"密码库文件头损坏，原文件已备份为 {Path.GetFileName(backup)}，请从加密备份恢复或用主密码重试。";
+                Log.Error(LastRecoveryMessage);
+            }
+            catch (Exception ex)
+            {
+                LastRecoveryMessage = "密码库文件头损坏（自动备份原文件失败：" + ex.Message + "）。";
+                Log.Error(LastRecoveryMessage);
+            }
+
             return null;
         }
 

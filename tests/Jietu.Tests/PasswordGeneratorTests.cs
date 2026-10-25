@@ -89,4 +89,32 @@ public sealed class PasswordGeneratorTests
         Assert.True(everything > digitsOnly);
         Assert.Equal(0, PasswordGenerator.EstimateEntropyBits(10, false, false, false, false));
     }
+
+    [Fact]
+    public void EstimatePasswordEntropy_CountsClassesAndScalesWithLength()
+    {
+        var (lowerBits, lowerClasses) = PasswordGenerator.EstimatePasswordEntropy("abcdefgh");
+        Assert.Equal(1, lowerClasses);
+        Assert.Equal(8 * Math.Log2(26), lowerBits, 5);
+
+        var (mixedBits, mixedClasses) = PasswordGenerator.EstimatePasswordEntropy("Abc123!!");
+        Assert.Equal(4, mixedClasses);
+        Assert.Equal(8 * Math.Log2(26 + 26 + 10 + 33), mixedBits, 5);
+        Assert.True(mixedBits > lowerBits);
+
+        // 空串与单类内容的边界。
+        Assert.Equal(0, PasswordGenerator.EstimatePasswordEntropy("").Bits);
+        Assert.Equal(1, PasswordGenerator.EstimatePasswordEntropy("12345678").Classes);
+    }
+
+    [Fact]
+    public void EstimatePassphraseEntropy_ScalesWithWords()
+    {
+        var four = PasswordGenerator.EstimatePassphraseEntropyBits(4);
+        var six = PasswordGenerator.EstimatePassphraseEntropyBits(6);
+        Assert.Equal(4 * Math.Log2(PasswordGenerator.WordListSize), four, 5);
+        Assert.True(six > four);
+        // 词表至少 2^7：4 词短语不低于 28 bit 是「短小易拼写词表」的底线。
+        Assert.True(PasswordGenerator.WordListSize >= 128);
+    }
 }

@@ -28,7 +28,7 @@ public sealed partial class PasswordWindow : Window
     private string? _selectedId;
     // 正在编辑的条目是否已存在于库中（决定保存是更新还是插入）。
     private bool _editingExisting;
-    // 「显示密码」态使用的明文缓存：与 PasswordBox/TextBox 双控件互切配合。
+    // TOTP 验证码 1 秒刷新计时器。
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _totpTimer;
 
     public PasswordWindow(AppHost host)
@@ -58,6 +58,10 @@ public sealed partial class PasswordWindow : Window
                 _vault.TouchActivity();
             }
         };
+
+        // 空闲/锁屏/睡眠/托盘/桥都会触发 Locked（全部在 UI 线程回调）：
+        // 立即切回解锁视图并清空编辑器，明文不能在锁定后还留在界面上。
+        _vault.Locked += () => DispatcherQueue.TryEnqueue(RefreshState);
     }
 
     public bool IsOpen => _open;
@@ -121,6 +125,9 @@ public sealed partial class PasswordWindow : Window
         UnlockPanel.Visibility = Visibility.Visible;
         LockBadge.Visibility = Visibility.Visible;
         StopTotpTimer();
+        // 锁定/关闭后编辑器里的明文与列表行都不能残留。
+        ClearEditor();
+        EntryList.ItemsSource = null;
 
         var exists = _vault.Exists;
         UnlockTitle.Text = exists ? "输入主密码解锁" : "创建密码库";
@@ -131,13 +138,16 @@ public sealed partial class PasswordWindow : Window
         ConfirmBox.Visibility = exists ? Visibility.Collapsed : Visibility.Visible;
         StrengthPanel.Visibility = exists ? Visibility.Collapsed : Visibility.Visible;
         CreateWarning.IsOpen = !exists;
+        HelloButton.Visibility = exists && _vault.HasHelloBlob ? Visibility.Visible : Visibility.Collapsed;
         HelloHint.Visibility = exists ? Visibility.Visible : Visibility.Collapsed;
+        HelloHint.Text = _vault.HasHelloBlob
+            ? "免输主密码：点击上方按钮用指纹 / PIN 快速解锁。"
+            : "可在 设置 → 密码库 中启用 Windows Hello 快速解锁（指纹 / PIN 免输主密码）。";
         UnlockButton.Content = exists ? "解锁" : "创建密码库";
         UnlockError.IsOpen = false;
         UnlockError.Message = "";
         MasterBox.Password = "";
         ConfirmBox.Password = "";
-        HelloButton.Visibility = exists && _vault.HasHelloBlob ? Visibility.Visible : Visibility.Collapsed;
         MasterBox.Focus(FocusState.Programmatic);
     }
 
@@ -155,14 +165,7 @@ public sealed partial class PasswordWindow : Window
         }
 
         var password = MasterBox.Password;
-        var pool = 0;
-        var classes = 0;
-        if (password.Any(c => c is >= 'a' and <= 'z')) { pool += 26; classes++; }
-        if (password.Any(c => c is >= 'A' and <= 'Z')) { pool += 26; classes++; }
-        if (password.Any(c => c is >= '0' and <= '9')) { pool += 10; classes++; }
-        if (password.Any(c => !(c is >= 'a' and <= 'z') && !(c is >= 'A' and <= 'Z') && !(c is >= '0' and <= '9'))) { pool += 32; classes++; }
-
-        var bits = password.Length * (pool == 0 ? 0 : Math.Log2(pool));
+        var (bits, classes) = PasswordGenerator.EstimatePasswordEntropy(password);
         var lengthOk = password.Length >= 12;
         var mixedOk = classes >= 3 && password.Length >= 8;
 
@@ -178,7 +181,7 @@ public sealed partial class PasswordWindow : Window
         StrengthLabel.Text = label;
         StrengthLabel.Foreground = new SolidColorBrush(color);
         StrengthBar.Foreground = new SolidColorBrush(color);
-        StrengthText.Text = pool == 0
+        StrengthText.Text = password.Length == 0
             ? "开始输入以评估强度"
             : $"约 {bits:F0} bit 熵 · {password.Length} 个字符";
 
@@ -357,23 +360,8 @@ public sealed partial class PasswordWindow : Window
             }
 
             var text = await Windows.Storage.FileIO.ReadTextAsync(file);
-            var rows = VaultImportExport.ParseCsv(text);
-            var entries = VaultImportExport.ToEntries(rows);
-            var data = _vault.Data!;
-            var added = 0;
-            foreach (var entry in entries)
-            {
-                // 按「标题+用户名」去重：重复导入同一份导出文件不会翻倍。
-                var exists = data.Entries.Any(en =>
-                    en.Title.Equals(entry.Title, StringComparison.OrdinalIgnoreCase)
-                    && en.Username.Equals(entry.Username, StringComparison.OrdinalIgnoreCase));
-                if (!exists)
-                {
-                    data.Entries.Add(entry);
-                    added++;
-                }
-            }
-
+            var entries = VaultImportExport.ToEntries(VaultImportExport.ParseCsv(text));
+            var added = VaultImportExport.MergeInto(_vault.Data!, entries);
             if (added > 0)
             {
                 _vault.Save();
@@ -386,6 +374,85 @@ public sealed partial class PasswordWindow : Window
         {
             Log.Error(ex);
             _host.Toast.Show("导入失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>从加密备份恢复：与 CSV 导入相同的合并去重策略，不覆盖现有条目。</summary>
+    private async void OnRestoreBackup(object sender, RoutedEventArgs e)
+    {
+        if (!_vault.IsUnlocked)
+        {
+            return;
+        }
+
+        Windows.Storage.StorageFile file;
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker
+            {
+                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+            };
+            picker.FileTypeFilter.Add(".spvault");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            file = await picker.PickSingleFileAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+            _host.Toast.Show("打开文件失败：" + ex.Message);
+            return;
+        }
+
+        if (file == null)
+        {
+            return;
+        }
+
+        var box = new Microsoft.UI.Xaml.Controls.PasswordBox { PlaceholderText = "备份口令" };
+        var hint = new TextBlock
+        {
+            Text = "备份文件用导出时设置的备份口令加密（与主密码无关）。恢复按「标题+用户名」去重合并，不会覆盖现有条目。",
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+        };
+        var panel = new StackPanel { Spacing = 10 };
+        panel.Children.Add(hint);
+        panel.Children.Add(box);
+        if (await ShowVaultDialog("从加密备份恢复", panel, "恢复") != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        if (box.Password.Length == 0)
+        {
+            _host.Toast.Show("请输入备份口令");
+            return;
+        }
+
+        try
+        {
+            var buffer = await Windows.Storage.FileIO.ReadBufferAsync(file);
+            Windows.Security.Cryptography.CryptographicBuffer.CopyToByteArray(buffer, out var bytes);
+            var backupData = await Task.Run(() => VaultImportExport.OpenEncryptedBackup(bytes, box.Password));
+            if (backupData == null)
+            {
+                _host.Toast.Show("备份口令不正确或备份文件已损坏");
+                return;
+            }
+
+            var added = VaultImportExport.MergeInto(_vault.Data!, backupData.Entries);
+            if (added > 0)
+            {
+                _vault.Save();
+                RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+            }
+
+            _host.Toast.Show($"恢复完成：新增 {added} 条，跳过已有 {backupData.Entries.Count - added} 条");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+            _host.Toast.Show("恢复失败：" + ex.Message);
         }
     }
 
@@ -637,13 +704,26 @@ public sealed partial class PasswordWindow : Window
 
     // ---------------- 编辑器 ----------------
 
+    private bool IsNoteKind => KindCombo.SelectedIndex == 1;
+
+    /// <summary>类型切换：安全笔记没有用户名/密码/网址/TOTP，收起凭据字段避免误填。</summary>
+    private void OnKindChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CredentialFields is null)
+        {
+            return;
+        }
+
+        CredentialFields.Visibility = IsNoteKind ? Visibility.Collapsed : Visibility.Visible;
+    }
+
     private void LoadEditor(VaultEntry entry)
     {
         DetailPane.Visibility = Visibility.Visible;
         EmptyPane.Visibility = Visibility.Collapsed;
         DetailHeader.Text = "条目详情";
         _editingExisting = true;
-        KindBox.Text = entry.Kind == "note" ? "安全笔记" : "登录";
+        KindCombo.SelectedIndex = entry.Kind == "note" ? 1 : 0;
         TitleBox.Text = entry.Title;
         UsernameBox.Text = entry.Username;
         PasswordBox.Password = entry.Password;
@@ -663,6 +743,7 @@ public sealed partial class PasswordWindow : Window
         _selectedId = null;
         _editingExisting = false;
         DetailPane.Visibility = Visibility.Collapsed;
+        KindCombo.SelectedIndex = 0;
         TitleBox.Text = "";
         UsernameBox.Text = "";
         PasswordBox.Password = "";
@@ -688,22 +769,22 @@ public sealed partial class PasswordWindow : Window
         }
 
         var now = DateTimeOffset.UtcNow;
-        var entry = new VaultEntry
+        var note = IsNoteKind;
+        return new VaultEntry
         {
             Id = _editingExisting && _selectedId != null ? _selectedId : Guid.NewGuid().ToString("N"),
-            Kind = KindBox.Text.Contains("笔记") ? "note" : "login",
+            Kind = note ? "note" : "login",
             Title = TitleBox.Text.Trim(),
-            Username = UsernameBox.Text.Trim(),
             // 「显示密码」态下明文在 TextBox 里，PasswordBox 是旧的，取可见的那个。
-            Password = PasswordBox.Visibility == Visibility.Visible ? PasswordBox.Password : PasswordTextBox.Text,
-            Url = UrlBox.Text.Trim(),
-            TotpSecret = secret,
+            Username = note ? "" : UsernameBox.Text.Trim(),
+            Password = note ? "" : (PasswordBox.Visibility == Visibility.Visible ? PasswordBox.Password : PasswordTextBox.Text),
+            Url = note ? "" : UrlBox.Text.Trim(),
+            TotpSecret = note ? "" : secret,
             Tags = tags,
             Notes = NotesBox.Text,
             CreatedUtc = now,
             UpdatedUtc = now,
         };
-        return entry;
     }
 
     private void OnNewEntry(object sender, RoutedEventArgs e)
@@ -717,7 +798,6 @@ public sealed partial class PasswordWindow : Window
         ClearEditor();
         _selectedId = null;
         _editingExisting = false;
-        KindBox.Text = "登录";
         DetailPane.Visibility = Visibility.Visible;
         EmptyPane.Visibility = Visibility.Collapsed;
         DetailHeader.Text = "新建条目";
@@ -796,7 +876,7 @@ public sealed partial class PasswordWindow : Window
         }
 
         ClearEditor();
-        RefreshList(null);
+        RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
         _host.Toast.Show("条目已删除");
     }
 
@@ -809,7 +889,7 @@ public sealed partial class PasswordWindow : Window
             PasswordTextBox.Text = PasswordBox.Password;
             PasswordBox.Visibility = Visibility.Collapsed;
             PasswordTextBox.Visibility = Visibility.Visible;
-            (sender as Button)!.Content = "隐藏";
+            RevealButton.Content = "隐藏";
         }
         else
         {
@@ -822,7 +902,13 @@ public sealed partial class PasswordWindow : Window
         PasswordBox.Password = PasswordTextBox.Text;
         PasswordBox.Visibility = Visibility.Visible;
         PasswordTextBox.Visibility = Visibility.Collapsed;
+        RevealButton.Content = "显示";
     }
+
+    /// <summary>当前编辑中的密码：显示态明文在 TextBox（可能被改过），否则取 PasswordBox。</summary>
+    private string CurrentPassword => PasswordBox.Visibility == Visibility.Visible
+        ? PasswordBox.Password
+        : PasswordTextBox.Text;
 
     private void CopySecret(string text, string label)
     {
@@ -844,7 +930,7 @@ public sealed partial class PasswordWindow : Window
         }
     }
 
-    private void OnCopyPassword(object sender, RoutedEventArgs e) => CopySecret(PasswordBox.Password, "密码");
+    private void OnCopyPassword(object sender, RoutedEventArgs e) => CopySecret(CurrentPassword, "密码");
 
     private void OnCopyUsername(object sender, RoutedEventArgs e) => CopySecret(UsernameBox.Text, "用户名");
 
@@ -857,25 +943,56 @@ public sealed partial class PasswordWindow : Window
             : Visibility.Visible;
         if (GeneratorPanel.Visibility == Visibility.Visible)
         {
-            OnGeneratePassword(sender, e);
+            Generate();
         }
     }
 
-    private void OnGeneratePassword(object sender, RoutedEventArgs e)
+    /// <summary>选项变化（长度/词数/短语/字符类开关）时立即重生成，所见即所得。</summary>
+    private void OnGeneratorOptionChanged(object sender, RoutedEventArgs e) => Regenerate();
+
+    private void OnGeneratorLengthChanged(NumberBox sender, NumberBoxValueChangedEventArgs args) => Regenerate();
+
+    private void Regenerate()
     {
-        try
+        var phrase = GenPassphrase.IsChecked == true;
+        GenWordsBox.Visibility = phrase ? Visibility.Visible : Visibility.Collapsed;
+        GenLengthBox.IsEnabled = !phrase;
+        if (GeneratorPanel.Visibility == Visibility.Visible)
         {
-            GenOutput.Text = GenPassphrase.IsChecked == true
-                ? PasswordGenerator.GeneratePassphrase(4)
-                : PasswordGenerator.Generate(Math.Clamp(int.Parse(GenLengthBox.Text), PasswordGenerator.MinLength, PasswordGenerator.MaxLength),
-                    GenLower.IsChecked == true, GenUpper.IsChecked == true, GenDigits.IsChecked == true, GenSymbols.IsChecked == true);
-        }
-        catch (Exception ex)
-        {
-            GenOutput.Text = "";
-            _host.Toast.Show("生成失败：" + ex.Message);
+            Generate();
         }
     }
+
+    private void OnGeneratePassword(object sender, RoutedEventArgs e) => Generate();
+
+    private void Generate()
+    {
+        if (GenPassphrase.IsChecked == true)
+        {
+            var words = Math.Clamp((int)GenWordsBox.Value, PasswordGenerator.MinWords, PasswordGenerator.MaxWords);
+            GenOutput.Text = PasswordGenerator.GeneratePassphrase(words);
+            GenEntropyText.Text = $"约 {PasswordGenerator.EstimatePassphraseEntropyBits(words):F0} bit 熵（{words} 个随机单词）";
+            return;
+        }
+
+        var lower = GenLower.IsChecked == true;
+        var upper = GenUpper.IsChecked == true;
+        var digits = GenDigits.IsChecked == true;
+        var symbols = GenSymbols.IsChecked == true;
+        if (!lower && !upper && !digits && !symbols)
+        {
+            GenOutput.Text = "";
+            GenEntropyText.Text = "至少选择一个字符类";
+            return;
+        }
+
+        var length = Math.Clamp((int)GenLengthBox.Value, PasswordGenerator.MinLength, PasswordGenerator.MaxLength);
+        GenOutput.Text = PasswordGenerator.Generate(length, lower, upper, digits, symbols);
+        var bits = PasswordGenerator.EstimateEntropyBits(length, lower, upper, digits, symbols);
+        GenEntropyText.Text = $"约 {bits:F0} bit 熵";
+    }
+
+    private void OnCopyGenerated(object sender, RoutedEventArgs e) => CopySecret(GenOutput.Text, "生成的密码");
 
     private void OnUseGenerated(object sender, RoutedEventArgs e)
     {
@@ -884,6 +1001,8 @@ public sealed partial class PasswordWindow : Window
             return;
         }
 
+        // 密码只属于登录条目：note 模式下填入自动切回登录。
+        KindCombo.SelectedIndex = 0;
         HideReveal();
         PasswordBox.Password = GenOutput.Text;
         GenOutput.Text = "";

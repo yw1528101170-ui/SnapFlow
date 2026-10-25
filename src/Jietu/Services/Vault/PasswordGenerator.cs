@@ -101,6 +101,36 @@ public static class PasswordGenerator
         return pool == 0 ? 0 : length * Math.Log2(pool);
     }
 
+    /// <summary>密码短语熵估计：词数 × log2(词表大小)。</summary>
+    public static double EstimatePassphraseEntropyBits(int words) => words * Math.Log2(WordList.Length);
+
+    /// <summary>词表大小（熵估算与测试锚点用）。</summary>
+    public static int WordListSize => WordList.Length;
+
+    /// <summary>
+    /// 按实际出现的字符类估算一段已有密码的熵（bit）。类池取全量
+    /// （26/26/10/33），不按生成器的去歧义子集算——强度计衡量的是
+    /// 攻击者的搜索空间，不是自家生成器的输出分布。
+    /// </summary>
+    public static (double Bits, int Classes) EstimatePasswordEntropy(string password)
+    {
+        var hasLower = false;
+        var hasUpper = false;
+        var hasDigit = false;
+        var hasSymbol = false;
+        foreach (var c in password)
+        {
+            if (c is >= 'a' and <= 'z') hasLower = true;
+            else if (c is >= 'A' and <= 'Z') hasUpper = true;
+            else if (c is >= '0' and <= '9') hasDigit = true;
+            else hasSymbol = true;
+        }
+
+        var pool = (hasLower ? 26 : 0) + (hasUpper ? 26 : 0) + (hasDigit ? 10 : 0) + (hasSymbol ? 33 : 0);
+        var classes = new[] { hasLower, hasUpper, hasDigit, hasSymbol }.Count(c => c);
+        return (pool == 0 ? 0 : password.Length * Math.Log2(pool), classes);
+    }
+
     private static void Shuffle(Span<char> chars)
     {
         for (var i = chars.Length - 1; i > 0; i--)
