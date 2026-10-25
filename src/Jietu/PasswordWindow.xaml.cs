@@ -2,6 +2,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Windows.System;
 
 namespace Jietu;
@@ -123,18 +124,98 @@ public sealed partial class PasswordWindow : Window
 
         var exists = _vault.Exists;
         UnlockTitle.Text = exists ? "输入主密码解锁" : "创建密码库";
+        UnlockModeBadge.Text = exists ? "本机加密存储" : "首次设置";
         UnlockSubtitle.Text = exists
             ? "密码库在本机加密存储，主密码无法找回。"
-            : "设置主密码。主密码是唯一的解锁凭据，忘记后数据无法恢复，请务必牢记。";
+            : "主密码是唯一的解锁凭据：库内所有数据用它加密，忘记后无法恢复。";
         ConfirmBox.Visibility = exists ? Visibility.Collapsed : Visibility.Visible;
         StrengthPanel.Visibility = exists ? Visibility.Collapsed : Visibility.Visible;
+        CreateWarning.IsOpen = !exists;
+        HelloHint.Visibility = exists ? Visibility.Visible : Visibility.Collapsed;
         UnlockButton.Content = exists ? "解锁" : "创建密码库";
         UnlockError.IsOpen = false;
+        UnlockError.Message = "";
         MasterBox.Password = "";
         ConfirmBox.Password = "";
-        UnlockError.Message = "";
         HelloButton.Visibility = exists && _vault.HasHelloBlob ? Visibility.Visible : Visibility.Collapsed;
         MasterBox.Focus(FocusState.Programmatic);
+    }
+
+    // ---------------- 创建态实时反馈：强度 / 要求清单 / 两次一致 ----------------
+
+    private void OnMasterPasswordChanged(object sender, RoutedEventArgs e) => UpdateCreateStrength();
+
+    private void OnConfirmPasswordChanged(object sender, RoutedEventArgs e) => UpdateMatchHint();
+
+    private void UpdateCreateStrength()
+    {
+        if (StrengthPanel.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        var password = MasterBox.Password;
+        var pool = 0;
+        var classes = 0;
+        if (password.Any(c => c is >= 'a' and <= 'z')) { pool += 26; classes++; }
+        if (password.Any(c => c is >= 'A' and <= 'Z')) { pool += 26; classes++; }
+        if (password.Any(c => c is >= '0' and <= '9')) { pool += 10; classes++; }
+        if (password.Any(c => !(c is >= 'a' and <= 'z') && !(c is >= 'A' and <= 'Z') && !(c is >= '0' and <= '9'))) { pool += 32; classes++; }
+
+        var bits = password.Length * (pool == 0 ? 0 : Math.Log2(pool));
+        var lengthOk = password.Length >= 12;
+        var mixedOk = classes >= 3 && password.Length >= 8;
+
+        StrengthBar.Value = Math.Min(bits, 100);
+        (var label, var color) = (bits, lengthOk && mixedOk) switch
+        {
+            ( >= 90, true) => ("非常强", Colors.MediumSeaGreen),
+            ( >= 60, true) => ("强", Colors.MediumSeaGreen),
+            ( >= 40, _) => ("一般", Colors.Goldenrod),
+            ( >= 1, _) => ("弱", Colors.Crimson),
+            _ => ("", Colors.Gray),
+        };
+        StrengthLabel.Text = label;
+        StrengthLabel.Foreground = new SolidColorBrush(color);
+        StrengthBar.Foreground = new SolidColorBrush(color);
+        StrengthText.Text = pool == 0
+            ? "开始输入以评估强度"
+            : $"约 {bits:F0} bit 熵 · {password.Length} 个字符";
+
+        ReqLength.Text = (lengthOk ? "✓ " : "✕ ") + "至少 12 个字符";
+        ReqMixed.Text = (mixedOk ? "✓ " : "✕ ") + "混合大小写、数字或符号更安全";
+        var okBrush = new SolidColorBrush(Colors.MediumSeaGreen);
+        var todoBrush = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"];
+        ReqLength.Foreground = lengthOk ? okBrush : todoBrush;
+        ReqMixed.Foreground = mixedOk ? okBrush : todoBrush;
+
+        UpdateMatchHint();
+    }
+
+    private void UpdateMatchHint()
+    {
+        if (ConfirmBox.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        if (ConfirmBox.Password.Length == 0)
+        {
+            MatchHint.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        MatchHint.Visibility = Visibility.Visible;
+        if (MasterBox.Password == ConfirmBox.Password)
+        {
+            MatchHint.Text = "✓ 两次输入一致";
+            MatchHint.Foreground = new SolidColorBrush(Colors.MediumSeaGreen);
+        }
+        else
+        {
+            MatchHint.Text = "两次输入不一致";
+            MatchHint.Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"];
+        }
     }
 
     // ---------------- 解锁 / 创建 / Hello ----------------
