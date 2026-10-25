@@ -424,23 +424,6 @@ public sealed partial class VaultSession : IDisposable
         return cleared;
     }
 
-    /// <summary>按保留期/条数淘汰。解锁后与锁定时各扫一次即可，不要每次保存都扫。</summary>
-    public int SweepRecycleBin()
-    {
-        if (_data == null)
-        {
-            return 0;
-        }
-
-        var removed = VaultRecycleBinService.Sweep(_data, DateTimeOffset.UtcNow);
-        if (removed > 0)
-        {
-            RequestSave();
-        }
-
-        return removed;
-    }
-
     /// <summary>体检（纯计算，不写盘）。条目多时调用方应放后台线程。</summary>
     public VaultHealthReport ComputeHealth(VaultHealthOptions? options = null, CancellationToken ct = default)
         => _data == null ? VaultHealthReport.Empty : VaultHealthService.Compute(_data, options, ct);
@@ -524,7 +507,6 @@ public sealed partial class VaultSession : IDisposable
         {
             Header = ReadHeader().WithFreshNonce(),
             Data = _data.CloneForBackground(),
-            DataVersion = 0,
         };
     }
 

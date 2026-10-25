@@ -203,6 +203,9 @@ public sealed class AppHost
     internal ClipboardService Clipboard => _clipboard;
     internal ToastWindow Toast => _toast;
 
+    /// <summary>浏览器桥的内存审计（最近取用记录，只记 host 与结果），供设置页展示；桥未启动时为空。</summary>
+    internal IReadOnlyList<VaultAuditRecord> VaultBridgeAudit => _vaultBridge?.RecentAudit ?? [];
+
     public void Start()
     {
         SensitiveForeground.SetIgnored(_settings.IgnoredProcesses);
@@ -506,7 +509,7 @@ public sealed class AppHost
 
     public Task CopyPathAsync(ClipRow row) => ApplyAsync(row, paste: false, pathOnly: true, plain: false);
 
-        public void CopyText(string text)
+    public void CopyText(string text)
     {
         _clipboard.SetText(text);
         _toast.Show("已复制文字");

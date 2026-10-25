@@ -23,3 +23,6 @@ src/Jietu/binVerifyBuild*.xbf
 *.suo
 TestResults/
 *.log
+
+# 本地 AI 会话目录（ZCode 计划/工作记录，不属于仓库内容）
+.zcode/

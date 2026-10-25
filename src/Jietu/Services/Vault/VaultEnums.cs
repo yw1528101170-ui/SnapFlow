@@ -55,18 +55,12 @@ public enum VaultOpenStatus
 
     /// <summary>读取文件时发生 IO 异常。</summary>
     IoFailed,
-
-    /// <summary>调用方取消。</summary>
-    Cancelled,
 }
 
 /// <summary>阻断态的种类（决定给用户看哪张卡、给扩展回哪个 reason）。</summary>
 public enum VaultBlockKind
 {
     None,
-
-    /// <summary>旧版 v1 库：本版本无法打开，零写盘，只指路。</summary>
-    LegacyV1,
 
     /// <summary>结构不合法或 tag 校验反复失败后的完整性阻断。</summary>
     IntegrityFailure,
@@ -110,7 +104,6 @@ public sealed record VaultBlockInfo(VaultBlockKind Kind, string Path, long FileB
     /// <summary>桥协议里的 reason 串（与 VaultBridgeErrors.VaultBlocked 搭配）。</summary>
     public string Reason => Kind switch
     {
-        VaultBlockKind.LegacyV1 => "legacy-v1",
         VaultBlockKind.NewerVersion => "newer-version",
         VaultBlockKind.IntegrityFailure => "integrity",
         VaultBlockKind.UnknownFile => "unknown-file",

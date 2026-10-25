@@ -32,9 +32,9 @@ public sealed class VaultRow
 /// </summary>
 public sealed partial class PasswordWindow : Window
 {
-    // 开发期临时关闭防截屏：true 时窗口对系统级截图不可见、且自家截图功能在前台时暂停。
-    // 发布前必须改回 true 并恢复 const（编译期常量可让分支整体消除）。
-    private static readonly bool ScreenshotProtectionEnabled = false;
+    // 防截屏：true 时窗口对系统级截图不可见（WDA_EXCLUDEFROMCAPTURE），
+    // 且自家截图功能在密码库前台时暂停。const 让"未启用"分支在编译期整体消除。
+    private const bool ScreenshotProtectionEnabled = true;
 
     private readonly AppHost _host;
     private readonly VaultSession _vault;
@@ -202,42 +202,6 @@ public sealed partial class PasswordWindow : Window
         ClearEditor();
     }
 
-    // ---------------- 状态切换 ----------------
-
-
-    // ---------------- 创建态实时反馈：强度 / 要求清单 / 两次一致 ----------------
-
-
-    // ---------------- 解锁 / 创建 / Hello ----------------
-
-
-    /// <summary>解锁按钮的进行态：文案换掉 + 禁用，让 Argon2 那一两秒有明确反馈。</summary>
-
-    /// <summary>Hello 磁贴的进行态：换文案 + 转圈 + 收起箭头，不把按钮整块置灰。</summary>
-
-
-    /// <summary>软提示：用户取消 Hello、切回主密码这类「不是错」的事，用灰字而不是红条。</summary>
-
-
-    // ---------------- 输入框焦点 / Caps Lock ----------------
-
-    /// <summary>输入框聚焦时外壳描边换成品牌色；顺带刷新 Caps Lock 提示。</summary>
-
-
-    /// <summary>主密码最怕「打了半天其实是大写」：Caps Lock 亮着就直说。</summary>
-
-
-    /// <summary>Hello 失败分情况说话：取消是正常操作，凭据丢失要指路，真坏了才用红条。</summary>
-
-    /// <summary>启用快速解锁（设置页调用）：包一层 Hello 副本并落盘。</summary>
-
-
-    // ---------------- 导入 / 导出 / 备份 / 改主密码 ----------------
-
-
-    /// <summary>从加密备份恢复：与 CSV 导入相同的合并去重策略，不覆盖现有条目。</summary>
-
-
     /// <summary>
     /// 应用内确认 / 提示对话框（替代 Win32 MessageBox）：跟随窗口主题与明暗色。
     /// confirmText 为 null 时只有「知道了」一个按钮，用于纯提示；
@@ -318,18 +282,6 @@ public sealed partial class PasswordWindow : Window
         return await dialog.ShowAsync();
     }
 
-    // ---------------- 列表 ----------------
-
-
-    /// <summary>按当前筛选 + 搜索 + 排序产出条目序列（只读，不改库）。</summary>
-
-
-    /// <summary>
-    /// 列表副标题：笔记只标类型，登录条目拼「用户名 · 域名」。
-    /// 网址只留主机名（去掉协议与路径），一行内能塞下更多信息。
-    /// </summary>
-
-
     // 列表头像调色板：按标题哈希取色，同一条目颜色稳定。
     private static readonly Color[] AvatarPalette =
     [
@@ -342,53 +294,8 @@ public sealed partial class PasswordWindow : Window
         Color.FromArgb(0xFF, 0x8B, 0x5C, 0xF6), // 蓝紫
     ];
 
-    /// <summary>标题 → (首字母, 淡底, 实色)：列表行与详情头共用，保证同一条目配色一致。</summary>
-
-
-    /// <summary>搜索框内 Esc：先清空关键词，再按一次才交给窗口（不抢占对话框的 Esc）。</summary>
-
-
-    /// <summary>无结果时的退路：清空搜索 + 回到「全部」筛选。</summary>
-
-    // ---------------- 分段筛选 / 排序 ----------------
-
-
-    /// <summary>有输入才显示清除按钮；与剪贴板历史一致，搜索胶囊里不再塞 Ctrl+F 键帽。</summary>
-
-
-    /// <summary>
-    /// 内容区显隐的唯一出口（列表卡片 / 空态 / 详情 / 引导占位）：
-    /// 编辑器或已选中条目就算「详情区已展开」，空库此时让位给表单而不是压一层欢迎页。
-    /// </summary>
-
-
-    // ---------------- 编辑器 ----------------
-
-
-    /// <summary>
-    /// 编辑器任一字段变化：展示「未保存」徽标。
-    /// 光靠 _editorLoading 挡不住 PasswordBox 这类延后派发的变更事件（装载完才回调，
-    /// 于是刚点开一条就冒出「未保存」），所以这里再跟装载时的快照比对一次：
-    /// 内容和装载时一致就不算改过。
-    /// </summary>
-
-
-    /// <summary>编辑器当前内容的指纹：用于判断「真的改过」而不是「事件来过」。</summary>
-
-
-    // ---------------- 密码显示 / 复制 ----------------
-
-
     /// <summary>当前编辑中的密码：显示态明文在 TextBox（可能被改过），否则取 PasswordBox。</summary>
     private string CurrentPassword => PasswordBox.Visibility == Visibility.Visible
         ? PasswordBox.Password
         : PasswordTextBox.Text;
-
-
-    // ---------------- 键盘快捷键 ----------------
-
-
-    // ---------------- TOTP ----------------
-
-
 }

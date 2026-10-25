@@ -8,8 +8,6 @@ namespace Jietu;
 /// </summary>
 public readonly record struct VaultFileRead(byte[] Raw, VaultFileKind Kind, VaultHeader Header, byte[]? Body, bool IoFailed = false)
 {
-    public bool Exists => Kind != VaultFileKind.Missing || IoFailed;
-
     public long Length => Raw.LongLength;
 }
 
@@ -18,10 +16,9 @@ public readonly record struct VaultFileRead(byte[] Raw, VaultFileKind Kind, Vaul
 ///
 /// 类型层面的安全边界（SEC-03 的落地方式）：
 /// 解锁路径只能拿到 <see cref="Read"/> 这一个方法——它读文件、返回分类，**不产生任何文件**。
-/// 会写盘的三个方法（<see cref="SaveAsync"/> / <see cref="CleanupTemporaryFiles"/> /
-/// <see cref="TryCreateCorruptBackup"/>）都不在解锁分支的调用链上，
-/// 且 <see cref="TryCreateCorruptBackup"/> 自带 kind 白名单（v1/更新版本/认证失败一律不写）。
-/// 这样"忘了别写盘"就不再依赖人的记性。
+/// 会写盘的方法（<see cref="SaveAsync"/> / <see cref="TryCreateCorruptBackup"/>）都不在
+/// 解锁分支的调用链上，且 <see cref="TryCreateCorruptBackup"/> 自带 kind 白名单
+/// （v1/更新版本/认证失败一律不写）。这样"忘了别写盘"就不再依赖人的记性。
 /// </summary>
 public static class VaultStore
 {
@@ -129,10 +126,7 @@ public static class VaultStore
     public static Task SaveAsync(string path, byte[] fileBytes, CancellationToken ct = default)
         => Task.Run(() => Save(path, fileBytes, ct), ct);
 
-    /// <summary>清理孤儿临时文件，返回清理数量。库文件不存在时不动手（tmp 可能是唯一副本）。</summary>
-    public static int CleanupTemporaryFiles(string path) => VaultBackupRotation.CleanupTemporaryFiles(path);
-
-    /// <summary>按时间倒序列出滚动备份（供"从备份恢复"对话框使用）。</summary>
+    /// <summary>按时间倒序列出滚动备份（诊断与测试用；恢复走文件选择器，不依赖这份清单）。</summary>
     public static IReadOnlyList<string> ListBackups(string path) => VaultBackupRotation.List(path);
 
     /// <summary>

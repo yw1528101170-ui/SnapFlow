@@ -1,21 +1,18 @@
-using System.Diagnostics;
-using Microsoft.UI;
-using Microsoft.UI.Input;
-using Microsoft.UI.Text;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.System;
 using Windows.UI;
-using Windows.UI.Core;
 
 namespace Jietu;
 
 /// <summary>PasswordWindow 的「列表 / 搜索 / 筛选 / 排序 / 布局」部分（partial）。</summary>
 public sealed partial class PasswordWindow
 {
+    /// <summary>按当前搜索框内容刷新列表（各事件处理器的统一入口，避免查询串到处内联）。</summary>
+    private void RefreshList() => RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+
     private void RefreshList(string? query)
     {
         if (!_vault.IsUnlocked)
@@ -140,7 +137,7 @@ public sealed partial class PasswordWindow
     private void OnSearchChanged(object sender, TextChangedEventArgs e)
     {
         _vault.TouchActivity();
-        RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+        RefreshList();
     }
 
     private void OnSearchKeyDown(object sender, KeyRoutedEventArgs e)
@@ -180,7 +177,7 @@ public sealed partial class PasswordWindow
     {
         _sort = sort;
         SortLabel.Text = sort == VaultSort.Title ? "标题 A → Z" : "最近修改";
-        RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+        RefreshList();
     }
 
     private void UpdateSearchAffordances()

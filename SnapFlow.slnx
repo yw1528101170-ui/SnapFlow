@@ -7,4 +7,8 @@
   <Folder Name="/tests/">
     <Project Path="tests/Jietu.Tests/Jietu.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <!-- 独立小工具：不在 CI 主构建里，需要时单独 dotnet build -->
+    <Project Path="tools/IconGen/IconGen.csproj" />
+  </Folder>
 </Solution>

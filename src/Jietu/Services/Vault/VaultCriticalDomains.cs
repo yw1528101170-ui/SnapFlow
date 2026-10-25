@@ -7,7 +7,9 @@ namespace Jietu;
 /// ① 域名列表必然漏（每家银行有几十个域名，还有 App 专用域），而漏报的代价是
 ///    "用户以为没事、其实这个账号该开两步验证"；
 /// ② 关键词匹配偏保守（宁可多提示），且不会因为域名改版而失效；
-/// ③ 误报可由用户在编辑器里一键标为「否」（<see cref="VaultEntry.CriticalOverride"/>）排除。
+/// ③ 误报目前只能自行忽略（编辑器暂无「标为非关键账号」开关，
+///    <see cref="VaultEntry.CriticalOverride"/> 字段已在载荷 v2 预留，
+///    见 docs/vault-optimization/07-implementation-notes.md）。
 ///
 /// 纪律：全部小写 ASCII、长度 ≥ 3、只匹配 host（不含路径与查询串）、
 /// **纯 `Contains`，没有任何后缀语义或例外分支**——规则无例外才不会被后人改坏。

@@ -147,9 +147,6 @@ public sealed class VaultBridgeGuardTests
         // 环形：保留最新的三条。
         Assert.Equal("site7.example", snapshot[0].Host);
         Assert.Equal("site9.example", snapshot[2].Host);
-
-        audit.Clear();
-        Assert.Empty(audit.Snapshot());
     }
 
     // ---------------- 导入上限（整体拒绝，绝不截断） ----------------

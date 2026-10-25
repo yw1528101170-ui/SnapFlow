@@ -24,15 +24,7 @@ public static class VaultMessages
     /// <summary>第三层：辅助。给出可执行的下一步，而不是让用户卡在这里。</summary>
     public const string UnlockFailedHint = "如果确认主密码无误，可从加密备份恢复。";
 
-    // ---------------- 阻断卡（三种不可解锁的库） ----------------
-
-    public const string BlockLegacyTitle = "无法打开这个密码库";
-
-    public static string BlockLegacyBody(string path)
-        => $"当前密码库由旧版本 SnapFlow 创建，本版本已升级为新的加密格式，无法直接打开。你的库文件完整保留在：{path}。"
-           + "如需取回其中数据，请先安装 SnapFlow 1.1.4 导出 CSV，再回到本版本重新导入。我们不会删除或覆盖你的库文件。";
-
-    public const string BlockLegacyHint = "建议先复制一份库文件再做任何操作。";
+    // ---------------- 阻断卡（两种不可解锁的库：过新 / 损坏或无法识别） ----------------
 
     public const string BlockIntegrityTitle = "密码库校验失败";
 
@@ -49,12 +41,6 @@ public static class VaultMessages
 
     public static string BlockUnknownBody(string path)
         => $"这个文件不是 SnapFlow 密码库，或它的版本号无法识别。为避免误删，我们没有改动它：{path}。";
-
-    // ---------------- 阻断卡上的动作 ----------------
-
-    public const string OpenVaultFolder = "打开所在文件夹";
-    public const string RestoreFromBackup = "用备份文件恢复";
-    public const string RetryAfterMove = "重新检测";
 
     // ---------------- 创建受阻 / 读取失败 ----------------
 
@@ -73,7 +59,7 @@ public static class VaultMessages
 
     // ---------------- 备份 / 恢复 ----------------
 
-    public const string BackupWrongPassword = "备份密码不正确，或这个备份文件已损坏。";
+    public const string BackupWrongPassword = "备份口令不正确，或这个备份文件已损坏。";
 
     public const string BackupLegacyRefused = "这个备份文件是旧版本格式，本版本无法恢复。";
 
@@ -102,17 +88,9 @@ public static class VaultMessages
     public static string CorruptBackupLimitReached(string folder)
         => $"密码库文件结构损坏，但备份份数或体积已达上限，未再生成新的备份。原文件保持不变：{folder}";
 
-    // ---------------- 生成器熵标签 ----------------
-
-    /// <summary>
-    /// 密码短语熵标签。**模板化**：bit 数由实际词表大小实算，不允许写死常量。
-    /// 7776 词 × 6 词 = 77.5 bit ⇒ 显示 77（向下取整，宁可少报不多报）。
-    /// </summary>
-    public static string PassphraseEntropy(int words, int bits) => $"密码短语（{words} 词 ≈ {bits} bit）";
-
     // ---------------- 状态提示 ----------------
 
     public const string SaveFailed = "保存失败，已回退到上一个版本";
 
-    public const string VaultLocked = "密码库已锁定。";
+    public const string VaultLockedToast = "密码库已锁定";
 }

@@ -143,40 +143,6 @@ internal static class ScreenUtil
         return new RectInt32(x, y, width, height);
     }
 
-    public static RectInt32 ToastBounds(int contentWidth = 0, int contentHeight = 0)
-    {
-        NativeMethods.GetCursorPos(out var point);
-        var area = DisplayArea.GetFromPoint(new PointInt32(point.X, point.Y), DisplayAreaFallback.Nearest);
-        var scale = MonitorScale(Win32Interop.GetMonitorFromDisplayId(area.DisplayId), IntPtr.Zero);
-        var work = area.WorkArea;
-        var width = contentWidth > 0 ? (int)Math.Round(contentWidth * scale) : Math.Max(1, (int)Math.Round(220 * scale));
-        var height = contentHeight > 0 ? (int)Math.Round(contentHeight * scale) : Math.Max(1, (int)Math.Round(46 * scale));
-        var margin = Math.Max(1, (int)Math.Round(24 * scale));
-        if (width > work.Width)
-        {
-            width = Math.Max(1, work.Width);
-        }
-
-        if (height > work.Height)
-        {
-            height = Math.Max(1, work.Height);
-        }
-
-        var x = work.X + work.Width - width - margin;
-        var y = work.Y + work.Height - height - margin;
-        if (x < work.X)
-        {
-            x = work.X;
-        }
-
-        if (y < work.Y)
-        {
-            y = work.Y;
-        }
-
-        return new RectInt32(x, y, width, height);
-    }
-
     private static double MonitorScale(IntPtr monitor, IntPtr window)
     {
         if (monitor != IntPtr.Zero

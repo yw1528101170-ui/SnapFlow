@@ -146,9 +146,6 @@ public static class PasswordGenerator
     /// <summary>向下取整的整数熵，供界面显示（宁可少报不多报）。</summary>
     public static int PassphraseEntropyBits(int words) => (int)Math.Floor(EstimatePassphraseEntropyBits(words));
 
-    /// <summary>界面上的熵标签（模板化，禁止写死 bit 数）。</summary>
-    public static string PassphraseEntropyLabel(int words) => VaultMessages.PassphraseEntropy(words, PassphraseEntropyBits(words));
-
     /// <summary>
     /// 按实际出现的字符类估算一段已有密码的熵（bit）。池大小见 <see cref="LowerPoolSize"/> 等常量：
     /// 字母/数字按完整字符类、符号按实际 <see cref="SymbolSet"/>，保证口算与生成器一致。

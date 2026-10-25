@@ -121,19 +121,6 @@ public sealed class HistoryStore : IDisposable
         }
     }
 
-    public bool IsLatest(string contentHash)
-    {
-        if (string.IsNullOrWhiteSpace(contentHash))
-        {
-            return false;
-        }
-
-        lock (_gate)
-        {
-            return LatestHash() == contentHash;
-        }
-    }
-
     public bool ContainsHash(string contentHash)
     {
         if (string.IsNullOrWhiteSpace(contentHash))

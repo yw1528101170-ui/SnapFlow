@@ -1,15 +1,7 @@
-using System.Diagnostics;
-using Microsoft.UI;
-using Microsoft.UI.Input;
-using Microsoft.UI.Text;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using Windows.System;
-using Windows.UI;
-using Windows.UI.Core;
 
 namespace Jietu;
 
@@ -93,7 +85,7 @@ public sealed partial class PasswordWindow
         }
 
         ClearEditor();
-        RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+        RefreshList();
     }
 
     /// <summary>填充编辑器字段与共享头（不含模式切换）。</summary>
@@ -285,6 +277,14 @@ public sealed partial class PasswordWindow
         {
             var previous = data.Entries[index];
 
+            // 编辑器没有 TOTP / 标签 / 关键账号标记的输入控件：
+            // 这些字段从被覆盖的旧版本原样继承，否则一次普通编辑就会
+            // 把导入时带进来的 2FA 种子、标签等数据静默清空。
+            entry.Kind = previous.Kind;
+            entry.TotpSecret = previous.TotpSecret;
+            entry.Tags = [.. previous.Tags];
+            entry.CriticalOverride = previous.CriticalOverride;
+
             // 把"被覆盖的那一版"存进历史，改错了还能退回上一步。
             // 注意是拿 previous 去记录（它才是旧内容），再把整条历史链交给新条目。
             previous.History ??= [];
@@ -304,7 +304,7 @@ public sealed partial class PasswordWindow
             _host.Toast.Show("已保存");
             _selectedId = entry.Id;
             ShowDetail(entry);
-            RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+            RefreshList();
         }
         catch (Exception ex)
         {
@@ -337,22 +337,14 @@ public sealed partial class PasswordWindow
         }
 
         // 不再直接销毁：删除是可逆的，只有回收站里的"彻底删除"才不可逆。
+        // MoveToRecycleBin 内部已记一次保存请求，这里不再重复 RequestSave。
         if (!_vault.MoveToRecycleBin(_selectedId))
         {
             return;
         }
-        try
-        {
-            _vault.RequestSave();
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex);
-            _host.Toast.Show("保存失败：" + ex.Message);
-        }
 
         ClearEditor();
-        RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+        RefreshList();
         _host.Toast.Show("条目已删除");
     }
 
@@ -394,7 +386,7 @@ public sealed partial class PasswordWindow
 
         try
         {
-            var seconds = _vault.Data?.ClipboardClearSeconds ?? 30;
+            var seconds = _vault.Data?.ClipboardClearSeconds ?? VaultLimits.DefaultClipboardClearSeconds;
             _host.Clipboard.SetTextSecret(text, seconds);
             _host.Toast.Show(seconds > 0 ? $"已复制{label}（{seconds} 秒后自动清除）" : $"已复制{label}");
         }

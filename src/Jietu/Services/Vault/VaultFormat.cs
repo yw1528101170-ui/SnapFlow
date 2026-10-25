@@ -328,9 +328,6 @@ public static class VaultFormat
         => header.Iterations < VaultKdfPolicy.Iterations
            || header.MemoryKiB < VaultKdfPolicy.MemoryKiB
            || header.Parallelism < VaultKdfPolicy.Parallelism;
-
-    /// <summary>按当前策略构造新库头（新建库 / 改主密码 / 加密备份共用同一处参数）。</summary>
-    public static VaultHeader CurrentKdfPolicyHeader() => VaultKdfPolicy.NewVaultHeader();
 }
 
 /// <summary>
@@ -349,9 +346,6 @@ public static class VaultKdfPolicy
     public const int MemoryKiB = 64 * 1024;
 
     public const int Parallelism = 4;
-
-    /// <summary>策略上限：只用于**导入外来文件**时拒绝"256MiB 内存"这种故意拖死机器的头。</summary>
-    public const int ImportMemoryKiBMax = 256 * 1024;
 
     /// <summary>主密码最小长度（创建与修改一致）。</summary>
     public const int MasterPasswordMinLength = 12;

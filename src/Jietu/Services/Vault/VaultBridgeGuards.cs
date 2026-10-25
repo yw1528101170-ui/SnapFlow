@@ -113,8 +113,6 @@ public sealed class VaultRateLimiter
         _pause = TimeSpan.FromSeconds(Math.Max(1, pauseSeconds));
     }
 
-    public int Capacity => _capacity;
-
     /// <summary>取一个令牌。被拒时 <paramref name="retryAfterSeconds"/> 为建议重试等待秒数。</summary>
     public bool TryAcquire(out int retryAfterSeconds)
     {
@@ -178,7 +176,7 @@ public sealed class VaultAuditLog
     {
         lock (_gate)
         {
-            _records.Enqueue(new VaultAuditRecord(DateTimeOffset.Now, host ?? "", result, count));
+            _records.Enqueue(new VaultAuditRecord(DateTimeOffset.UtcNow, host ?? "", result, count));
             while (_records.Count > _capacity)
             {
                 _records.Dequeue();
@@ -192,14 +190,6 @@ public sealed class VaultAuditLog
         lock (_gate)
         {
             return _records.ToArray();
-        }
-    }
-
-    public void Clear()
-    {
-        lock (_gate)
-        {
-            _records.Clear();
         }
     }
 }

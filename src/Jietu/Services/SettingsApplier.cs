@@ -194,15 +194,6 @@ internal sealed class SettingsApplier
         _toast.Show(_current.ShowOsd ? "已开启性能悬浮窗" : "已关闭性能悬浮窗");
     }
 
-    public void SetOsdEnabled(bool enabled)
-    {
-        if (_current.ShowOsd == enabled) return;
-        _current.ShowOsd = enabled;
-        _osd.SetEnabled(enabled);
-        _hardwareMonitor.Enabled = enabled;
-        Save();
-    }
-
     public void SetOsdPosition(string position)
     {
         _current.OsdPosition = position;
@@ -217,12 +208,6 @@ internal sealed class SettingsApplier
         _osd.SetTargetDisplay(display);
         Save();
         _toast.Show(string.Equals(display, "FollowCursor", StringComparison.OrdinalIgnoreCase) ? "悬浮窗将跟随鼠标所在屏幕" : "悬浮窗已固定在主显示器");
-    }
-
-    public void SetOsdHideOnCapture(bool hide)
-    {
-        _current.OsdHideOnCapture = hide;
-        Save();
     }
 
     /// <summary>保存目录生效值：未自定义时落在「图片\SnapFlow」。</summary>

@@ -31,7 +31,7 @@ public sealed partial class PasswordWindow
         VaultPanel.Visibility = Visibility.Visible;
         LockPill.Visibility = Visibility.Collapsed;
         ApplyWindowSize();
-        RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+        RefreshList();
     }
 
     private void ShowUnlockPanel()
@@ -102,7 +102,7 @@ public sealed partial class PasswordWindow
 
         var password = MasterBox.Password;
         var (bits, classes) = PasswordGenerator.EstimatePasswordEntropy(password);
-        var lengthOk = password.Length >= 12;
+        var lengthOk = password.Length >= VaultKdfPolicy.MasterPasswordMinLength;
         var mixedOk = classes >= 3 && password.Length >= 8;
 
         // 空密码时藏掉进度条：0% 只剩一条轨道线，看着像多余的分割线。
@@ -130,7 +130,7 @@ public sealed partial class PasswordWindow
         var okBrush = new SolidColorBrush(Colors.MediumSeaGreen);
         var todoBrush = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"];
         var doneTextBrush = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
-        ReqLength.Text = "至少 12 个字符";
+        ReqLength.Text = $"至少 {VaultKdfPolicy.MasterPasswordMinLength} 个字符";
         ReqMixed.Text = "混合大小写、数字或符号更安全";
         (ReqLengthIcon.Glyph, ReqLengthIcon.Foreground) = lengthOk
             ? ("\uE73E", okBrush)
@@ -297,14 +297,14 @@ public sealed partial class PasswordWindow
     {
         if (password != ConfirmBox.Password)
         {
-            ShowUnlockError("两次输入的主密码不一致。");
+            ShowUnlockError(VaultMessages.PasswordMismatch);
             ConfirmBox.Focus(FocusState.Programmatic);
             return;
         }
 
-        if (password.Length < 12)
+        if (password.Length < VaultKdfPolicy.MasterPasswordMinLength)
         {
-            ShowUnlockError("主密码太短，请至少使用 12 个字符。");
+            ShowUnlockError(VaultMessages.MasterPasswordTooShort);
             MasterBox.Focus(FocusState.Programmatic);
             return;
         }
@@ -482,21 +482,9 @@ public sealed partial class PasswordWindow
         }
     }
 
-    public async Task EnableHelloAsync()
-    {
-        if (await _vault.EnableHelloAsync())
-        {
-            _host.Toast.Show("Windows Hello 快速解锁已启用");
-        }
-        else
-        {
-            _host.Toast.Show("未能启用快速解锁（可能已取消）");
-        }
-    }
-
     private void OnLockClick(object sender, RoutedEventArgs e)
     {
         _vault.Lock();
-        _host.Toast.Show("密码库已锁定");
+        _host.Toast.Show(VaultMessages.VaultLockedToast);
     }
 }

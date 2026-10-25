@@ -7,10 +7,10 @@ namespace Jietu;
 /// <summary>
 /// 解锁视图的"阻断与失败"逻辑（partial）。
 ///
-/// 三种不可解锁的情形必须分开呈现，因为它们要求的动作完全不同：
-/// ① 旧版 v1（LegacyV1）：数据在，只是格式变了 ⇒ 指路 + 给路径 + 打开文件夹，程序零写盘；
-/// ② 版本过新（NewerVersion）：换新版程序就能开 ⇒ 只说"升级"；
-/// ③ 结构损坏/无法识别（IntegrityFailure / UnknownFile）：可以留一份备份，再引导从加密备份恢复。
+/// 两种不可解锁的情形必须分开呈现，因为它们要求的动作完全不同：
+/// ① 版本过新（NewerVersion）：换新版程序就能开 ⇒ 只说"升级"；
+/// ② 结构损坏/无法识别（IntegrityFailure / UnknownFile）：可以留一份备份，再引导从加密备份恢复。
+/// （旧版 v1 库不进阻断卡：会话分类把它按"未初始化"处理，创建时原文件改名留档。）
 ///
 /// 而"认证失败"（tag 不匹配）**不属于上面任何一种**：它可能只是一次手滑输错密码，
 /// 所以保留输入区、保留"再试一次"的权利，只在下方给三层提示与恢复入口。
@@ -36,7 +36,6 @@ public sealed partial class PasswordWindow
         BlockCard.Visibility = Visibility.Visible;
         BlockTitle.Text = block.Kind switch
         {
-            VaultBlockKind.LegacyV1 => VaultMessages.BlockLegacyTitle,
             VaultBlockKind.NewerVersion => VaultMessages.BlockNewerTitle,
             VaultBlockKind.UnknownFile => VaultMessages.BlockUnknownTitle,
             _ => VaultMessages.BlockIntegrityTitle,
@@ -137,55 +136,18 @@ public sealed partial class PasswordWindow
     /// </summary>
     private async void OnRecoverFromBackup(object sender, RoutedEventArgs e)
     {
-        Windows.Storage.StorageFile file;
-        try
-        {
-            var picker = new Windows.Storage.Pickers.FileOpenPicker
-            {
-                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
-            };
-            picker.FileTypeFilter.Add(".spvault");
-            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
-            file = await picker.PickSingleFileAsync();
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex);
-            _host.Toast.Show("打开文件失败：" + ex.Message);
-            return;
-        }
-
-        if (file == null)
-        {
-            return;
-        }
-
-        var box = new Microsoft.UI.Xaml.Controls.PasswordBox
-        {
-            Header = "备份密码",
-            PlaceholderText = "导出备份时设置的备份密码",
-        };
-        var hint = new TextBlock
-        {
-            Text = "这里只校验备份能否打开，不会改动你的库文件。校验通过后再按提示重建密码库并导入。",
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 11.5,
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-        };
-        var panel = new StackPanel { Spacing = 10 };
-        panel.Children.Add(hint);
-        panel.Children.Add(box);
-        if (await ShowVaultDialog("校验加密备份", panel, "校验",
-                () => box.Password.Length == 0 ? "请输入备份密码。" : null) != ContentDialogResult.Primary)
+        var picked = await PickBackupFileWithPasswordAsync(
+            "校验加密备份",
+            "这里只校验备份能否打开，不会改动你的库文件。校验通过后再按提示重建密码库并导入。",
+            "校验");
+        if (picked is not { } backup)
         {
             return;
         }
 
         try
         {
-            var buffer = await Windows.Storage.FileIO.ReadBufferAsync(file);
-            Windows.Security.Cryptography.CryptographicBuffer.CopyToByteArray(buffer, out var bytes);
-            var opened = await Task.Run(() => VaultImportExport.OpenEncryptedBackup(bytes, box.Password));
+            var opened = await Task.Run(() => VaultImportExport.OpenEncryptedBackup(backup.Bytes, backup.Password));
             switch (opened.Status)
             {
                 case VaultOpenStatus.Ok:

@@ -1,15 +1,6 @@
-using System.Diagnostics;
-using Microsoft.UI;
-using Microsoft.UI.Input;
-using Microsoft.UI.Text;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Windows.System;
-using Windows.UI;
-using Windows.UI.Core;
 
 namespace Jietu;
 
@@ -56,7 +47,7 @@ public sealed partial class PasswordWindow
                 // 导入是大批量写入：用 Flush 立刻落盘，别留给防抖窗口（用户此时最怕"导完就崩"）。
                 _vault.RequestSave();
                 await _vault.FlushAsync();
-                RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+                RefreshList();
             }
 
             _host.Toast.Show($"导入完成：新增 {added} 条，跳过重复 {entries.Count - added} 条");
@@ -68,13 +59,13 @@ public sealed partial class PasswordWindow
         }
     }
 
-    private async void OnRestoreBackup(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// 选一个 .spvault 备份文件并让用户输入备份口令。「校验备份」与「从备份恢复」
+    /// 两个入口共用这一段；返回 null 表示用户取消或读取失败（已提示）。
+    /// </summary>
+    private async Task<(byte[] Bytes, string Password)?> PickBackupFileWithPasswordAsync(
+        string title, string hint, string actionText)
     {
-        if (!_vault.IsUnlocked)
-        {
-            return;
-        }
-
         Windows.Storage.StorageFile file;
         try
         {
@@ -90,12 +81,12 @@ public sealed partial class PasswordWindow
         {
             Log.Error(ex);
             _host.Toast.Show("打开文件失败：" + ex.Message);
-            return;
+            return null;
         }
 
         if (file == null)
         {
-            return;
+            return null;
         }
 
         var box = new Microsoft.UI.Xaml.Controls.PasswordBox
@@ -103,27 +94,55 @@ public sealed partial class PasswordWindow
             Header = "备份口令",
             PlaceholderText = "导出备份时设置的备份口令",
         };
-        var hint = new TextBlock
+        var hintBlock = new TextBlock
         {
-            Text = "备份文件用导出时设置的备份口令加密（与主密码无关）。恢复按「标题+用户名」去重合并，不会覆盖现有条目。",
+            Text = hint,
             TextWrapping = TextWrapping.Wrap,
             FontSize = 11.5,
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
         };
         var panel = new StackPanel { Spacing = 10 };
-        panel.Children.Add(hint);
+        panel.Children.Add(hintBlock);
         panel.Children.Add(box);
-        if (await ShowVaultDialog("从加密备份恢复", panel, "恢复",
+        if (await ShowVaultDialog(title, panel, actionText,
                 () => box.Password.Length == 0 ? "请输入备份口令。" : null) != ContentDialogResult.Primary)
         {
-            return;
+            return null;
         }
 
         try
         {
             var buffer = await Windows.Storage.FileIO.ReadBufferAsync(file);
             Windows.Security.Cryptography.CryptographicBuffer.CopyToByteArray(buffer, out var bytes);
-            var opened = await Task.Run(() => VaultImportExport.OpenEncryptedBackup(bytes, box.Password));
+            return (bytes, box.Password);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+            _host.Toast.Show("读取备份失败：" + ex.Message);
+            return null;
+        }
+    }
+
+    private async void OnRestoreBackup(object sender, RoutedEventArgs e)
+    {
+        if (!_vault.IsUnlocked)
+        {
+            return;
+        }
+
+        var picked = await PickBackupFileWithPasswordAsync(
+            "从加密备份恢复",
+            "备份文件用导出时设置的备份口令加密（与主密码无关）。恢复按「标题+用户名」去重合并，不会覆盖现有条目。",
+            "恢复");
+        if (picked is not { } backup)
+        {
+            return;
+        }
+
+        try
+        {
+            var opened = await Task.Run(() => VaultImportExport.OpenEncryptedBackup(backup.Bytes, backup.Password));
             switch (opened.Status)
             {
                 case VaultOpenStatus.Ok:
@@ -147,7 +166,7 @@ public sealed partial class PasswordWindow
                 // 同导入：恢复完立刻落盘，不让数据停在防抖窗口里。
                 _vault.RequestSave();
                 await _vault.FlushAsync();
-                RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+                RefreshList();
             }
 
             _host.Toast.Show($"恢复完成：新增 {added} 条，跳过已有 {backupData.Entries.Count - added} 条");

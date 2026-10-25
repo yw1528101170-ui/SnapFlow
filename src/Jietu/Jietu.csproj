@@ -22,18 +22,31 @@
     <WindowsSdkPackageVersion>10.0.26100.57</WindowsSdkPackageVersion>
     <Product>SnapFlow 瞬流</Product>
     <Title>SnapFlow (瞬流)</Title>
-    <Description>轻量、现代且高效率的 Windows 智能截图、贴图与剪贴板工作流增强工具</Description>
+    <Description>轻量、现代且高效率的 Windows 智能截图、贴图、屏幕性能监控、剪贴板与本地密码库工作流增强工具</Description>
     <Company>SnapFlow</Company>
     <Authors>SnapFlow</Authors>
     <Copyright>Copyright © 2026 SnapFlow. All rights reserved.</Copyright>
     <NeutralLanguage>zh-CN</NeutralLanguage>
     <!-- 版本唯一来源：-p:Version 可覆盖。不要添加 AssemblyVersion/FileVersion，
          显式设置会优先于 -p:Version，导致升版时 Win32 文件版本不更新 -->
-    <Version>1.1.5</Version>
+    <Version>1.1.6</Version>
     <ApplicationIcon>Assets\App.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="Assets\App.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 浏览器扩展随程序分发：BrowserIntegration.FindExtensionFolder 在 exe 目录起向上找
+         ext/snapflow-vault，放进输出目录后「一键安装」在正式安装版/便携版里同样可用
+         （安装器按 artifacts/publish 递归打包，自动带上）。 -->
+    <Content Include="..\..\ext\snapflow-vault\**\*">
+      <Link>ext\snapflow-vault\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 第三方组件与数据来源声明（EFF 词表 CC BY 3.0 的署名要求）：复制进输出/发布目录，
+         关于页「查看声明」按 exe 同目录定位，安装器随 artifacts/publish 打包带走。 -->
+    <Content Include="..\..\docs\third-party-notices.md">
+      <Link>third-party-notices.md</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

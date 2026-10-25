@@ -95,24 +95,6 @@ internal static class ImageBytes
         return bitmap;
     }
 
-    public static SoftwareBitmap Crop(SoftwareBitmap source, PixelRect rect)
-    {
-        var pixels = ReadBgra(source);
-        var width = source.PixelWidth;
-        var height = source.PixelHeight;
-        var x = Math.Clamp(rect.X, 0, Math.Max(0, width - 1));
-        var y = Math.Clamp(rect.Y, 0, Math.Max(0, height - 1));
-        var cropWidth = Math.Clamp(rect.Width, 1, width - x);
-        var cropHeight = Math.Clamp(rect.Height, 1, height - y);
-        var cropped = new byte[cropWidth * cropHeight * 4];
-        for (var row = 0; row < cropHeight; row++)
-        {
-            System.Buffer.BlockCopy(pixels, ((y + row) * width + x) * 4, cropped, row * cropWidth * 4, cropWidth * 4);
-        }
-
-        return FromBgra(cropped, cropWidth, cropHeight);
-    }
-
     public static async Task<byte[]> ToPngAsync(byte[] pixels, int width, int height)
     {
         using var bitmap = FromBgra(pixels, width, height);
@@ -212,10 +194,6 @@ internal static class ImageBytes
         return await ReadStreamAsync(stream);
     }
 
-    /// <summary>
-    /// 用 WinRT 的硬件缩放管线把图像缩到不超过 max 像素。
-    /// 走 BitmapTransform 可直接命中 GPU 缩放，比逐像素插值快一个数量级。
-    /// </summary>
     /// <summary>
     /// 直接从 PNG 流解码并应用硬件缩放至目标尺寸，避免先解码为完整图再编码 BMP 的往返开销。
     /// </summary>

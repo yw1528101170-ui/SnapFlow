@@ -205,23 +205,24 @@ public sealed partial class OverlayWindow
             }
 
             return new AnnotateStroke
-        {
-            Kind = stroke.Kind,
-            B = stroke.B,
-            G = stroke.G,
-            R = stroke.R,
-            Text = stroke.Text,
-            FontPx = stroke.FontPx,
-            WidthPx = stroke.WidthPx,
-            Points = points,
-        };
-    }).ToList();
+            {
+                Kind = stroke.Kind,
+                B = stroke.B,
+                G = stroke.G,
+                R = stroke.R,
+                Text = stroke.Text,
+                FontPx = stroke.FontPx,
+                WidthPx = stroke.WidthPx,
+                Points = points,
+            };
+        }).ToList();
         return new PickedShot
         {
             Width = rect.Width,
             Height = rect.Height,
             Pixels = AnnotationRenderer.Render(cropped, rect.Width, rect.Height, local),
-            Pin = pin && !extract && !extractCode && !longCapture && !translate && !aiVision,
+            // 贴图与其它捕获后动作互斥：工具栏按钮各只置一个标志，这里防御性兜底。
+            Pin = pin && !extract && !extractCode && !longCapture && !translate && !aiVision && !share,
             ExtractText = extract,
             ExtractCode = extractCode,
             LongCapture = longCapture,
@@ -299,7 +300,7 @@ public sealed partial class OverlayWindow
         Confirm();
     }
 
-        private void OnExtractText(object sender, RoutedEventArgs e)
+    private void OnExtractText(object sender, RoutedEventArgs e)
     {
         _extractText = true;
         Confirm();

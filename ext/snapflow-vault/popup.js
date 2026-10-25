@@ -4,6 +4,9 @@
 
 const HOST = "com.snapflow.vault";
 
+// 桌面端挂起时原生消息可能永不回应：所有请求都带超时，避免 popup 永远停在「读取中」。
+const NATIVE_TIMEOUT_MS = 10000;
+
 // 关联令牌：首次生成后存在扩展本地，桌面端只存其哈希。
 async function getToken() {
     const store = await chrome.storage.local.get("token");
@@ -16,7 +19,12 @@ async function getToken() {
 }
 
 function sendNative(message) {
-    return chrome.runtime.sendNativeMessage(HOST, message);
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("桌面端响应超时")), NATIVE_TIMEOUT_MS);
+    });
+    return Promise.race([chrome.runtime.sendNativeMessage(HOST, message), timeout])
+        .finally(() => clearTimeout(timer));
 }
 
 function setDot(kind, text) {
@@ -31,6 +39,13 @@ function setHint(html) {
     el.innerHTML = html;
 }
 
+// 错误路径上清掉列表里的「读取中…」：留着会与红色错误提示自相矛盾。
+function clearList() {
+    const list = document.getElementById("list");
+    list.className = "";
+    list.textContent = "";
+}
+
 // 动态内容（错误消息等）拼进 innerHTML 前必须转义：popup 是特权页面。
 const esc = (s) => String(s).replace(/[&<>"']/g, c => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -40,10 +55,34 @@ function notEnabledHint() {
     setHint("在 SnapFlow 设置 → 密码库 中启用「浏览器自动填充」，并确认已填写本扩展 ID。");
 }
 
+function disconnectedHint(detail) {
+    setDot("err", "未连接");
+    setHint("无法连接 SnapFlow 桌面端。请确认：<br>1. SnapFlow 正在运行<br>2. 设置 → 密码库 → 浏览器自动填充已启用"
+        + (detail ? "<br><code>" + esc(String(detail).slice(0, 120)) + "</code>" : ""));
+}
+
+// 桥协议错误 reason → 用户可读的提示（与桌面端 VaultBridge 的错误码一一对应）。
+function describeBridgeError(result) {
+    switch (result && result.reason) {
+        case "rate-limited":
+            return result.retryAfterSeconds
+                ? `请求过于频繁，已暂停 ${result.retryAfterSeconds} 秒，稍后再试。`
+                : "请求过于频繁，稍后再试。";
+        case "vault-blocked":
+            return "密码库文件无法打开（版本过新或已损坏）。请在 SnapFlow 密码库窗口中按指引处理。"
+                + (result.detail ? `<br><code>${esc(result.detail)}</code>` : "");
+        case "integration-disabled":
+            notEnabledHint();
+            return null;
+        default:
+            return "桌面端返回异常：<code>" + esc(JSON.stringify(result).slice(0, 140)) + "</code>";
+    }
+}
+
 async function pairIfNeeded(token) {
     // 未关联时触发桌面端确认弹窗；用户批准后 get-logins 即可用。
-    const extName = chrome.i18n?.getMessage?.("extName") || "Chrome 扩展";
-    return sendNative({ type: "hello", token, name: `${navigator.userAgent.includes("Edg/") ? "Edge" : "Chrome"} · ${extName}` });
+    const browser = navigator.userAgent.includes("Edg/") ? "Edge" : "Chrome";
+    return sendNative({ type: "hello", token, name: `${browser} · SnapFlow 扩展` });
 }
 
 async function fetchLogins(url) {
@@ -53,11 +92,12 @@ async function fetchLogins(url) {
     try {
         status = await sendNative({ type: "status" });
     } catch (err) {
-        setDot("err", "未连接");
-        setHint("无法连接 SnapFlow 桌面端。请确认：<br>1. SnapFlow 正在运行<br>2. 设置 → 密码库 → 浏览器自动填充已启用<br><code>" + esc(String(err.message || err).slice(0, 120)) + "</code>");
+        clearList();
+        disconnectedHint(err.message || err);
         return null;
     }
-    if ((status.type === "error" && status.reason === "integration-disabled") || status.integration === false) {
+    if (status.integration === false) {
+        clearList();
         notEnabledHint();
         return null;
     }
@@ -66,46 +106,64 @@ async function fetchLogins(url) {
     try {
         result = await sendNative({ type: "get-logins", token, url });
     } catch (err) {
-        setDot("err", "未连接");
-        setHint("请求中断：<code>" + esc(String(err.message || err).slice(0, 120)) + "</code>");
+        clearList();
+        disconnectedHint(err.message || err);
         return null;
     }
-    if (result.type === "error" && result.reason === "integration-disabled") {
-        notEnabledHint();
-        return null;
-    }
-    if (result.type === "error" && result.reason === "not-paired") {
-        // 首次连接：走关联确认（桌面端会弹窗）。
-        let paired;
-        try {
-            paired = await pairIfNeeded(token);
-        } catch (err) {
-            setDot("err", "未连接");
-            setHint("关联请求中断：<code>" + esc(String(err.message || err).slice(0, 120)) + "</code>");
+    if (result.type === "error") {
+        clearList();
+        if (result.reason === "not-paired") {
+            // 首次连接：走关联确认（桌面端会弹窗）。
+            let paired;
+            try {
+                paired = await pairIfNeeded(token);
+            } catch (err) {
+                disconnectedHint(err.message || err);
+                return null;
+            }
+            if (paired.type === "error") {
+                setDot("warn", "未关联");
+                setHint(paired.reason === "pair-busy"
+                    ? "已有一个关联确认在等待，先在桌面端完成那个确认再重试。"
+                    : paired.reason === "vault-locked"
+                        ? "密码库已锁定，无法关联。先在 SnapFlow 中解锁（Alt+P），再重开本弹窗。"
+                        : "关联被拒绝或超时。重试：重新打开本弹窗。");
+                return null;
+            }
+            if (paired.type !== "hello-result" || !paired.ok) {
+                setDot("warn", "未关联");
+                setHint(paired.reason === "vault-locked"
+                    ? "密码库已锁定，无法关联。先在 SnapFlow 中解锁（Alt+P），再重开本弹窗。"
+                    : "关联被拒绝或超时。重试：重新打开本弹窗。");
+                return null;
+            }
+            result = await sendNative({ type: "get-logins", token, url });
+        } else {
+            const hint = describeBridgeError(result);
+            if (hint === null) {
+                clearList();
+                return null; // notEnabledHint 已展示。
+            }
+            setDot("err", "错误");
+            setHint(hint);
             return null;
         }
-        if (paired.type === "error" && paired.reason === "integration-disabled") {
-            notEnabledHint();
-            return null;
-        }
-        if (paired.type !== "hello-result" || !paired.ok) {
-            setDot("warn", "未关联");
-            setHint("关联被拒绝或超时。重试：重新打开本弹窗。");
-            return null;
-        }
-        result = await sendNative({ type: "get-logins", token, url });
     }
 
     if (result.type !== "logins") {
+        clearList();
         setDot("err", "错误");
-        setHint("桌面端返回异常：<code>" + esc(JSON.stringify(result).slice(0, 140)) + "</code>");
+        setHint(describeBridgeError(result) || "桌面端返回异常。");
         return null;
     }
 
     if (result.locked) {
         setDot("warn", "已锁定");
         setHint("密码库已锁定。打开 SnapFlow 密码库窗口（Alt+P）解锁后再试。");
-        return [];
+        const list = document.getElementById("list");
+        list.className = "empty";
+        list.textContent = "解锁后重开本弹窗即可填充";
+        return null;
     }
 
     setDot("ok", "已连接");
@@ -138,12 +196,19 @@ function renderEntries(entries, tabId) {
         button.className = "fill-btn";
         button.textContent = "填充";
         button.addEventListener("click", async () => {
-            const result = await chrome.tabs.sendMessage(tabId, {
-                action: "snapflow-fill",
-                username: entry.username,
-                password: entry.password,
-            });
-            button.textContent = result?.ok ? "已填 ✓" : "失败";
+            try {
+                const result = await chrome.tabs.sendMessage(tabId, {
+                    action: "snapflow-fill",
+                    username: entry.username,
+                    password: entry.password,
+                });
+                button.textContent = result?.ok ? "已填 ✓" : "失败";
+            } catch {
+                // 页面在扩展安装前已打开（无内容脚本）、或浏览器扩展页等不可注入页面。
+                button.textContent = "失败";
+                setHint("这个页面无法注入填充脚本。刷新页面后重试；仍失败时请确认页面不是浏览器内置页面。");
+                return;
+            }
             setTimeout(() => window.close(), 600);
         });
         row.append(text, button);
@@ -165,6 +230,7 @@ async function init() {
             renderEntries(entries, tab.id);
         }
     } catch (err) {
+        clearList();
         setDot("err", "错误");
         setHint("弹窗初始化失败：<code>" + esc(String(err && err.message || err).slice(0, 120)) + "</code>");
     }
@@ -172,11 +238,18 @@ async function init() {
 
 document.getElementById("genBtn").addEventListener("click", async () => {
     const kind = document.getElementById("genKind").value;
-    const request = kind === "phrase" ? { type: "generate", words: 4 } : { type: "generate", length: 16 };
+    // 词数与桌面端推荐口径一致（6 词 ≈ 77 bit）。
+    const request = kind === "phrase" ? { type: "generate", words: 6 } : { type: "generate", length: 16 };
     try {
         const result = await sendNative(request);
-        document.getElementById("genOut").value = result.password || ("错误: " + (result.reason || "?"));
-    } catch (err) {
+        const output = document.getElementById("genOut");
+        if (result.password) {
+            output.value = result.password;
+        } else {
+            output.value = "";
+            setHint(result.reason === "generate-failed" ? "生成失败，请重试。" : "桌面端返回异常，请重试。");
+        }
+    } catch {
         document.getElementById("genOut").value = "";
         setHint("生成失败：桌面端未连接");
     }

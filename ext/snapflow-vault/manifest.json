@@ -3,7 +3,7 @@
     "name": "SnapFlow 密码库",
     "version": "1.0.0",
     "description": "SnapFlow 瞬流本地密码库的浏览器自动填充（需安装 SnapFlow 桌面端）",
-    "permissions": ["nativeMessaging", "activeTab", "storage", "tabs"],
+    "permissions": ["nativeMessaging", "activeTab", "storage"],
     "action": {
         "default_title": "SnapFlow 密码库",
         "default_popup": "popup.html"

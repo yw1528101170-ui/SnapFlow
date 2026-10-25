@@ -47,11 +47,13 @@ public sealed partial class PasswordWindow
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
         });
 
+        // 阈值文案与 VaultHealthOptions 默认值同源（ComputeHealth 不传参就用这份默认），避免两处数字漂移。
+        var thresholds = new VaultHealthOptions();
         var counters = new StackPanel { Spacing = 6 };
-        AddHealthRow(counters, "弱密码", report.WeakCount, "熵低于 50 bit 或长度不足 10 位");
+        AddHealthRow(counters, "弱密码", report.WeakCount, $"熵低于 {thresholds.WeakEntropyBits} bit 或长度不足 {thresholds.WeakMinLength} 位");
         AddHealthRow(counters, "密码含名称", report.FragmentCount, "密码里出现了标题或用户名的片段");
         AddHealthRow(counters, "重复使用", report.ReusedGroupCount, "多条账号共用同一密码（按组计）");
-        AddHealthRow(counters, "长期未更新", report.StaleCount, "超过 365 天没有改过密码");
+        AddHealthRow(counters, "长期未更新", report.StaleCount, $"超过 {thresholds.StaleDays} 天没有改过密码");
         AddHealthRow(
             counters,
             "未开两步验证",
@@ -249,7 +251,7 @@ public sealed partial class PasswordWindow
             if (_vault.RestoreFromRecycleBin(entry.Id))
             {
                 _host.Toast.Show("已恢复");
-                RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
+                RefreshList();
                 rebuild();
             }
         };

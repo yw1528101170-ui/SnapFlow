@@ -7,7 +7,7 @@ using Microsoft.UI.Dispatching;
 namespace Jietu;
 
 /// <summary>返回给扩展的登录条目：含密码（填充需要），仅限已解锁 + 已关联令牌。</summary>
-public sealed record VaultBridgeLogin(string Id, string Title, string Username, string Password, string Url);
+public sealed record VaultBridgeLogin(string Title, string Username, string Password, string Url);
 
 /// <summary>
 /// 本机命名管道桥：浏览器扩展的原生消息宿主进程经此管道与主程序通信。
@@ -241,10 +241,9 @@ internal sealed class VaultBridge : IDisposable
             return type switch
             {
                 "hello" => await HandleHelloAsync(doc.RootElement),
-                "status" => Status(),
-                "get-logins" => GetLogins(doc.RootElement),
+                "status" => await StatusAsync(),
+                "get-logins" => await GetLoginsAsync(doc.RootElement),
                 "generate" => Generate(doc.RootElement),
-                "lock" => LockVault(),
                 _ => Error("unknown-type"),
             };
         }
@@ -252,6 +251,33 @@ internal sealed class VaultBridge : IDisposable
         {
             return Error("bad-json");
         }
+    }
+
+    /// <summary>
+    /// 把对会话状态的读取编组到 UI 线程执行：VaultData 只允许 UI 线程读写
+    /// （见 VaultModels 的线程纪律），桥线程池直接遍历 Entries/TrustedBrowsers
+    /// 会与编辑器并发写撕裂。lambda 必须只返回 string / 值类型 / 不可变快照，
+    /// 不得把活对象带出 UI 线程。
+    /// </summary>
+    private async Task<T> ReadVaultAsync<T>(Func<VaultSession, T> read)
+    {
+        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_queue.TryEnqueue(() =>
+            {
+                try
+                {
+                    tcs.TrySetResult(read(_vault));
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            }))
+        {
+            throw new InvalidOperationException("UI 线程不可用，无法读取密码库状态。");
+        }
+
+        return await tcs.Task.ConfigureAwait(false);
     }
 
     private async Task<string> HandleHelloAsync(JsonElement root)
@@ -269,14 +295,16 @@ internal sealed class VaultBridge : IDisposable
 
         var tokenHash = Hashing.OfText(token);
         var displayName = GetString(root, "name") ?? "未知浏览器";
-        var trusted = _vault.Data?.TrustedBrowsers.Any(b => b.TokenHash == tokenHash) == true;
+        var (trusted, unlocked) = await ReadVaultAsync(v => (
+            v.Data?.TrustedBrowsers.Any(b => b.TokenHash == tokenHash) == true,
+            v.IsUnlocked));
 
         if (trusted)
         {
-            return Json(new { type = "hello-result", ok = true, paired = true, locked = !_vault.IsUnlocked });
+            return Json(new { type = "hello-result", ok = true, paired = true, locked = !unlocked });
         }
 
-        if (!_vault.IsUnlocked)
+        if (!unlocked)
         {
             return Json(new { type = "hello-result", ok = false, paired = false, locked = true, reason = "vault-locked" });
         }
@@ -306,15 +334,17 @@ internal sealed class VaultBridge : IDisposable
             : Error("pair-rejected");
     }
 
-    private string Status()
+    private async Task<string> StatusAsync()
     {
-        var block = _vault.Block;
-        var exists = _vault.Exists;
-        // blocked 为 null 表示"库可用/未创建"；有值时是 legacy-v1 / newer-version / integrity / unknown-file。
-        // formatVersion 只用于让扩展区分"旧库"与"损坏"，不做任何解密推测。
-        var formatVersion = block.Kind switch
+        var (exists, locked, blockKind, blockReason) = await ReadVaultAsync(v => (
+            v.Exists,
+            !v.IsUnlocked,
+            v.Block.Kind,
+            v.Block.Reason));
+        // blocked 为 null 表示"库可用/未创建"；有值时是 newer-version / integrity / unknown-file。
+        // formatVersion 只用于让扩展区分"正常库"与"损坏"，不做任何解密推测。
+        var formatVersion = blockKind switch
         {
-            VaultBlockKind.LegacyV1 => 1,
             VaultBlockKind.None => exists ? 2 : 0,
             _ => 0,
         };
@@ -322,14 +352,17 @@ internal sealed class VaultBridge : IDisposable
         {
             type = "status",
             exists,
-            locked = !_vault.IsUnlocked,
-            blocked = block.Kind == VaultBlockKind.None ? null : block.Reason,
+            locked,
+            blocked = blockKind == VaultBlockKind.None ? null : blockReason,
             formatVersion,
             integration = _settings().VaultBrowserIntegration,
         });
     }
 
-    private string GetLogins(JsonElement root)
+    /// <summary>get-logins 的判定结果：错误 reason / 锁定 / 已过滤的条目快照三选一（Result 对应审计分类）。</summary>
+    private sealed record LoginsOutcome(VaultAuditResult? Result, string? Error, string? Detail, bool Locked, VaultBridgeLogin[] Entries);
+
+    private async Task<string> GetLoginsAsync(JsonElement root)
     {
         var url = GetString(root, "url") ?? "";
         var host = VaultBridgeProtocol.HostOfUrl(url);
@@ -349,38 +382,53 @@ internal sealed class VaultBridge : IDisposable
             return Error("integration-disabled");
         }
 
-        // 阻断态必须显式告诉扩展，否则扩展会把"读不到"当成"没有这个站点的密码"。
-        if (_vault.IsBlocked)
+        var token = GetString(root, "token");
+        var outcome = await ReadVaultAsync(v =>
         {
-            _audit.Record(host, VaultAuditResult.Blocked);
-            return Json(new { type = "error", reason = "vault-blocked", detail = _vault.Block.Reason });
+            // 阻断态必须显式告诉扩展，否则扩展会把"读不到"当成"没有这个站点的密码"。
+            if (v.IsBlocked)
+            {
+                return new LoginsOutcome(VaultAuditResult.Blocked, "vault-blocked", v.Block.Reason, false, []);
+            }
+
+            if (!v.IsUnlocked)
+            {
+                return new LoginsOutcome(null, null, null, true, []);
+            }
+
+            if (token is not { Length: >= 32 }
+                || v.Data?.TrustedBrowsers.Any(b => b.TokenHash == Hashing.OfText(token)) != true)
+            {
+                return new LoginsOutcome(VaultAuditResult.NotPaired, "not-paired", null, false, []);
+            }
+
+            // 只返回该域名的前 5 条：填充菜单放不下更多，而返回越少，单次请求的泄漏面越小
+            // （每一条都含明文密码）。回收站条目不在 Entries 里，天然被排除。
+            var entries = v.Data!.Entries
+                .Where(e => e.Kind == "login" && VaultBridgeProtocol.UrlMatches(e.Url, url))
+                .OrderByDescending(e => e.UpdatedUtc)
+                .Take(VaultBridgeProtocol.MaxReturnedLogins)
+                .Select(e => new VaultBridgeLogin(e.Title, e.Username, e.Password, e.Url))
+                .ToArray();
+            return new LoginsOutcome(null, null, null, false, entries);
+        });
+
+        if (outcome.Result is { } denied)
+        {
+            _audit.Record(host, denied);
+            return outcome.Detail is { } detail
+                ? Json(new { type = "error", reason = outcome.Error, detail })
+                : Error(outcome.Error!);
         }
 
-        if (!_vault.IsUnlocked)
+        if (outcome.Locked)
         {
             _audit.Record(host, VaultAuditResult.VaultLocked);
-            return Json(new { type = "logins", locked = true, entries = Array.Empty<object>() });
+            return Json(new { type = "logins", locked = true, entries = Array.Empty<VaultBridgeLogin>() });
         }
 
-        var token = GetString(root, "token");
-        if (token is not { Length: >= 32 }
-            || _vault.Data?.TrustedBrowsers.Any(b => b.TokenHash == Hashing.OfText(token)) != true)
-        {
-            _audit.Record(host, VaultAuditResult.NotPaired);
-            return Error("not-paired");
-        }
-
-        // 只返回该域名的前 5 条：填充菜单放不下更多，而返回越少，单次请求的泄漏面越小
-        // （每一条都含明文密码）。回收站条目不在 Entries 里，天然被排除。
-        var entries = _vault.Data!.Entries
-            .Where(e => e.Kind == "login" && VaultBridgeProtocol.UrlMatches(e.Url, url))
-            .OrderByDescending(e => e.UpdatedUtc)
-            .Take(VaultBridgeProtocol.MaxReturnedLogins)
-            .Select(e => new VaultBridgeLogin(e.Id, e.Title, e.Username, e.Password, e.Url))
-            .ToArray();
-
-        _audit.Record(host, VaultAuditResult.Ok, entries.Length);
-        return Json(new { type = "logins", locked = false, entries });
+        _audit.Record(host, VaultAuditResult.Ok, outcome.Entries.Length);
+        return Json(new { type = "logins", locked = false, entries = outcome.Entries });
     }
 
     private string Generate(JsonElement root)
@@ -395,18 +443,10 @@ internal sealed class VaultBridge : IDisposable
         }
         catch (Exception ex)
         {
-            return Error(ex.Message);
+            // reason 是协议码不是文案：中文异常文本不进协议，只进日志。
+            Log.Info("VaultBridge 生成密码失败：" + ex.Message);
+            return Error("generate-failed");
         }
-    }
-
-    private string LockVault()
-    {
-        if (_vault.IsUnlocked)
-        {
-            _queue.TryEnqueue(_vault.Lock);
-        }
-
-        return Json(new { type = "ok" });
     }
 
     private static string? GetString(JsonElement root, string name)

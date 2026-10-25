@@ -3,32 +3,20 @@ using System.Text.Json;
 
 namespace Jietu;
 
-/// <summary>写载荷时的进度快照（条目级）。</summary>
-public readonly record struct VaultProgress(int Done, int Total)
-{
-    /// <summary>0..1；total 为 0 时视为已完成。</summary>
-    public double Fraction => Total <= 0 ? 1d : Math.Clamp((double)Done / Total, 0d, 1d);
-}
-
 /// <summary>
-/// 逐条目写库载荷 JSON。
+/// 把 <see cref="VaultData"/> 逐条目写成载荷 JSON。
 ///
-/// 为什么不用 <c>JsonSerializer.SerializeToUtf8Bytes</c>：改主密码需要"每 N 条报一次进度 +
-/// 条目间隙可取消"，整对象序列化是一根不可打断的黑盒，用户点取消只能等它跑完。
-///
-/// 字段名必须与 <see cref="VaultJsonContext"/> 的 camelCase 输出逐字一致——
-/// 两套序列化路径（本类 / 源生成上下文）读写同一份文件，任何名字偏差都会变成"写得进、读不出"。
-/// VaultModelsTests 用"写→读→逐字段比对"锁死这一点。
+/// 为什么不用 <c>JsonSerializer.SerializeToUtf8Bytes</c>：这里需要按字段精确控制输出
+/// （camelCase 字段名、null 语义），并保证与 <see cref="VaultJsonContext"/> 的读写路径
+/// 字段名逐字一致——两套序列化路径读写同一份文件，任何名字偏差都会变成"写得进、读不出"。
+/// VaultPayloadWriterTests 用"写→读→逐字段比对"锁死这一点。
 ///
 /// 线程：纯函数，任意线程可调用。返回的 <c>byte[]</c> 是明文，调用方负责 finally 清零。
 /// </summary>
 public static class VaultPayloadWriter
 {
-    /// <summary>进度回调的最小间隔（条）。逐条回调会把 UI 线程刷爆，按块报足够驱动进度条。</summary>
-    private const int ProgressStep = 50;
-
     /// <summary>整库序列化为 UTF-8 JSON 字节。返回值是明文，谁分配谁清零。</summary>
-    public static byte[] Write(VaultData data, IProgress<VaultProgress>? progress = null, CancellationToken ct = default)
+    public static byte[] Write(VaultData data)
     {
         ArgumentNullException.ThrowIfNull(data);
 
@@ -37,77 +25,47 @@ public static class VaultPayloadWriter
         var buffer = new ArrayBufferWriter<byte>(capacity);
         using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = false }))
         {
-            Write(data, writer, progress, ct);
+            writer.WriteStartObject();
+            writer.WriteNumber("schemaVersion", data.SchemaVersion);
+
+            writer.WriteStartArray("entries");
+            foreach (var entry in data.Entries)
+            {
+                WriteEntry(writer, entry);
+            }
+
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("recycleBin");
+            foreach (var entry in data.RecycleBin)
+            {
+                WriteEntry(writer, entry);
+            }
+
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("trustedBrowsers");
+            foreach (var browser in data.TrustedBrowsers)
+            {
+                WriteBrowser(writer, browser);
+            }
+
+            writer.WriteEndArray();
+
+            writer.WriteStartArray("healthIgnores");
+            foreach (var ignore in data.HealthIgnores)
+            {
+                WriteHealthIgnore(writer, ignore);
+            }
+
+            writer.WriteEndArray();
+
+            writer.WriteNumber("clipboardClearSeconds", data.ClipboardClearSeconds);
+            writer.WriteEndObject();
+            writer.Flush();
         }
 
         return buffer.WrittenSpan.ToArray();
-    }
-
-    /// <summary>写入调用方提供的 writer（便于测试直接比对 JSON 文本）。</summary>
-    public static void Write(
-        VaultData data, Utf8JsonWriter writer, IProgress<VaultProgress>? progress, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(data);
-        ArgumentNullException.ThrowIfNull(writer);
-
-        var total = data.Entries.Count + data.RecycleBin.Count;
-        var done = 0;
-        progress?.Report(new VaultProgress(0, total));
-
-        writer.WriteStartObject();
-        writer.WriteNumber("schemaVersion", data.SchemaVersion);
-
-        writer.WriteStartArray("entries");
-        foreach (var entry in data.Entries)
-        {
-            ct.ThrowIfCancellationRequested();
-            WriteEntry(writer, entry);
-            done++;
-            if (done % ProgressStep == 0)
-            {
-                progress?.Report(new VaultProgress(done, total));
-            }
-        }
-
-        writer.WriteEndArray();
-
-        writer.WriteStartArray("recycleBin");
-        foreach (var entry in data.RecycleBin)
-        {
-            ct.ThrowIfCancellationRequested();
-            WriteEntry(writer, entry);
-            done++;
-            if (done % ProgressStep == 0)
-            {
-                progress?.Report(new VaultProgress(done, total));
-            }
-        }
-
-        writer.WriteEndArray();
-
-        writer.WriteStartArray("trustedBrowsers");
-        foreach (var browser in data.TrustedBrowsers)
-        {
-            ct.ThrowIfCancellationRequested();
-            WriteBrowser(writer, browser);
-        }
-
-        writer.WriteEndArray();
-
-        writer.WriteStartArray("healthIgnores");
-        foreach (var ignore in data.HealthIgnores)
-        {
-            ct.ThrowIfCancellationRequested();
-            WriteHealthIgnore(writer, ignore);
-        }
-
-        writer.WriteEndArray();
-
-        writer.WriteNumber("clipboardClearSeconds", data.ClipboardClearSeconds);
-        writer.WriteEndObject();
-        writer.Flush();
-
-        progress?.Report(new VaultProgress(total, total));
     }
 
     private static void WriteEntry(Utf8JsonWriter writer, VaultEntry entry)

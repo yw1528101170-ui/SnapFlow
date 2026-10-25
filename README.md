@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/yw1528101170-ui/SnapFlow/actions/workflows/ci.yml"><img src="https://github.com/yw1528101170-ui/SnapFlow/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
-  <a href="https://github.com/yw1528101170-ui/SnapFlow/releases/latest"><img src="https://img.shields.io/badge/release-v1.1.4-blue" alt="release"/></a>
+  <a href="https://github.com/yw1528101170-ui/SnapFlow/releases/latest"><img src="https://img.shields.io/badge/release-v1.1.6-blue" alt="release"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="license"/></a>
 </p>
 
@@ -34,7 +34,9 @@
 - **取色器**：放大镜下精准定位像素，显示 RGB 与 HEX 格式，按 `C` 键直接复制色值。
 - **滚动长截图**：智能向下或向上拼接长网页、聊天记录与长图表。
 - **剪贴板历史**：独立管理最近复制的文字与图像，支持快速回溯与搜索。
-- **本地密码库**：Argon2id + AES-256-GCM 整库加密，主密码本机存储不上云；Windows Hello 指纹/PIN 快速解锁、TOTP 动态验证码、随机密码/密码短语生成器（实时熵估算）、加密备份与恢复、Chrome/Edge/Bitwarden CSV 导入；窗口防截屏、机密复制不进剪贴板历史且定时自动清除、空闲/锁屏/睡眠自动锁定；配套浏览器扩展（`ext/snapflow-vault`）支持 Chrome/Edge 站点自动填充。
+- **本地密码库**：Argon2id + AES-256-GCM 整库加密，主密码本机存储不上云；Windows Hello 指纹/PIN 快速解锁、加密备份与恢复、Chrome/Edge/Bitwarden CSV 导入、回收站与密码体检；窗口防截屏、机密复制不进剪贴板历史且定时自动清除、空闲/锁屏/睡眠自动锁定；配套浏览器扩展（`ext/snapflow-vault`，随安装包分发）支持 Chrome/Edge 站点自动填充与强密码生成。
+- **AI 视觉对话**：截图后一键发给多模态大模型，流式回答、多轮追问、Markdown 渲染与全尺寸图片查看（在设置中配置 API 端点与密钥）。
+- **二维码识别**：截图工具箱一键解析屏幕上的二维码/条形码。
 - **延时截图**：右键托盘提供 1~10 秒延时截图，方便截取悬浮菜单和临时状态。
 - **屏幕性能监控悬浮窗 (OSD)**：极简轻量置顶挂件，鼠标全穿透零干扰，实时监控 NVIDIA GPU（核心利用率/显存/温度）、CPU、内存与网络速率；支持右上角/左上角停靠及截图时智能避让。
 - **Apple 风格浮层动效**：OSD 贴顶「灵动岛」以阻尼弹簧展开/收起，数值指数缓动不跳变；系统级 Toast 为深色玻璃胶囊，入场缩放上浮淡入、退场快速下沉，文案切换时胶囊宽度弹性形变，并带 Apple 系统色徽章与处理中指示环。
@@ -136,15 +138,18 @@ WinUI 3 有两条「改完马上看到」的路子，按你在改什么选：
 ```text
 jietu/
 ├─ src/Jietu/                 # 主程序源码（WinUI 3 / .NET 10，x64）
-│  ├─ Services/               # 抓屏、OCR、剪贴板、历史库、OSD、打包自测等服务
-│  │  └─ Pipeline/            # 截图后的处理流水线（OCR / 翻译 / AI / 分享等）
+│  ├─ Services/               # 抓屏、OCR、剪贴板、历史库、OSD、密码库等服务
+│  │  ├─ Pipeline/            # 截图后的处理流水线（OCR / 翻译 / AI / 分享等）
+│  │  └─ Vault/               # 密码库：加密容器、会话、桥接、导入导出、体检
 │  ├─ Models/                 # 数据模型与设置
 │  └─ Assets/                 # 应用图标等资源
+├─ ext/snapflow-vault/        # 浏览器自动填充扩展（MV3，随安装包分发）
 ├─ installer/                 # 安装与打包
 │  ├─ build.ps1               # 一键打包：发布 → 安装包 → 便携包 → 自测 → 校验
 │  ├─ Jietu.iss               # Inno Setup 安装脚本
 │  ├─ RELEASE_NOTES.md        # 发布说明模板（打包时写入 dist/）
 │  └─ 使用说明.txt            # 便携版随包说明
+├─ docs/                      # 设计文档（密码库 PRD/设计/验收）与第三方声明
 ├─ tools/IconGen/             # 应用图标生成小工具
 ├─ scripts/fetch-nupkgs.ps1   # 离线 NuGet 依赖抓取脚本（填充 .nupkg-cache）
 ├─ scripts/dev.ps1            # 开发热重载循环：保存 → 构建 → 优雅重启 → 还原窗口

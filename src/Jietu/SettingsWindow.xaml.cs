@@ -587,7 +587,7 @@ public sealed partial class SettingsWindow : Window
             RecordTerminals = TerminalSwitch.IsOn,
             SaveFolder = FolderBox.Text.Trim(),
             IgnoredProcesses = _ignoredProcesses.ToList(),
-                        ShowOsd = OsdSwitch.IsOn,
+            ShowOsd = OsdSwitch.IsOn,
             OsdPosition = (OsdPositionBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "TopRight",
             OsdDisplay = (OsdDisplayBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Primary",
             OsdHideOnCapture = OsdHideOnCaptureSwitch.IsOn,
@@ -655,11 +655,9 @@ public sealed partial class SettingsWindow : Window
 
         if (vault.IsBlocked)
         {
-            // 阻断态（旧版/过新/损坏）与"已锁定"必须区分：前者输密码也没用，指路才是正事。
+            // 阻断态（过新/损坏）与"已锁定"必须区分：前者输密码也没用，指路才是正事。
             SetVaultStatusTile("Red");
-            VaultStatusText.Text = vault.Block.Kind == VaultBlockKind.LegacyV1
-                ? "旧版本密码库（本版本无法打开，文件已保留）"
-                : "密码库不可用（校验失败或版本过新）";
+            VaultStatusText.Text = "密码库不可用（校验失败或版本过新，密码库窗口中有处理指引）";
             VaultOpenButton.Content = "查看处理方式";
             VaultHelloButton.IsEnabled = false;
             VaultHelloText.Text = "请先在密码库窗口中按提示处理这个库文件";
@@ -791,7 +789,33 @@ public sealed partial class SettingsWindow : Window
         var browsers = BrowserIntegration.DetectBrowsers();
         VaultChromeRow.Visibility = browsers.Any(b => b.Id == "chrome") ? Visibility.Visible : Visibility.Collapsed;
         VaultEdgeRow.Visibility = browsers.Any(b => b.Id == "edge") ? Visibility.Visible : Visibility.Collapsed;
+
+        // 最近取用（内存审计，只记 host 与结果）：让"扩展刚才在哪些站点取过凭据"可见。
+        var audit = _host.VaultBridgeAudit;
+        if (enabled && audit.Count > 0)
+        {
+            VaultAuditText.Visibility = Visibility.Visible;
+            VaultAuditText.Text = "最近取用：" + string.Join("；", audit
+                .TakeLast(3)
+                .Reverse()
+                .Select(r => $"{r.AtUtc.ToLocalTime():MM-dd HH:mm} {DescribeAuditRecord(r)}"));
+        }
+        else
+        {
+            VaultAuditText.Visibility = Visibility.Collapsed;
+        }
     }
+
+    private static string DescribeAuditRecord(VaultAuditRecord record) => record.Result switch
+    {
+        VaultAuditResult.Ok => record.Count > 0 ? $"{record.Host}（返回 {record.Count} 条）" : record.Host,
+        VaultAuditResult.VaultLocked => $"{record.Host}（库已锁定，未返回）",
+        VaultAuditResult.RateLimited => "请求过于频繁，已限流",
+        VaultAuditResult.IntegrationDisabled => "集成已关闭，已拒绝",
+        VaultAuditResult.Blocked => $"{record.Host}（库不可用，已拒绝）",
+        VaultAuditResult.NotPaired => $"{record.Host}（未关联，已拒绝）",
+        _ => record.Host,
+    };
 
     /// <summary>
     /// 一键安装：写好 NMH 关联（ID 按扩展文件夹路径计算）→ 打开浏览器扩展页 →
@@ -853,7 +877,7 @@ public sealed partial class SettingsWindow : Window
             "① 浏览器已打开扩展管理页，资源管理器已弹出并选中 snapflow-vault 文件夹\n"
             + "② 如果提示需要「开发者模式」，点允许即可\n"
             + "③ 把这个文件夹拖进扩展页，安装就完成了\n\n"
-            + "装好后网页上的密码框会自动出现填充按钮，首次连接时桌面端会弹确认。");
+            + "装好后从浏览器工具栏的 SnapFlow 图标取用密码：当前站点一键填充、生成强密码；首次连接时桌面端会弹确认。");
     }
 
     /// <summary>设置页内的提示对话框（与 PasswordWindow 的 ShowAppConfirmAsync 同观感）。</summary>
@@ -1072,22 +1096,7 @@ public sealed partial class SettingsWindow : Window
                 return;
             }
 
-            var decoded = new BitmapImage();
-            using (var stream = new InMemoryRandomAccessStream())
-            {
-                using (var writer = new DataWriter(stream))
-                {
-                    writer.WriteBytes(bmp.Png);
-                    await writer.StoreAsync();
-                    await writer.FlushAsync();
-                    writer.DetachStream();
-                }
-
-                stream.Seek(0);
-                await decoded.SetSourceAsync(stream);
-            }
-
-            OsdPreviewImage.Source = decoded;
+            OsdPreviewImage.Source = await ImageBytes.PngToBitmapAsync(bmp.Png);
             OsdPreviewImage.Width = bmp.Width / raster;
             OsdPreviewImage.Height = bmp.Height / raster;
 
@@ -1396,6 +1405,31 @@ public sealed partial class SettingsWindow : Window
         catch (Exception ex)
         {
             Log.Info("打开应用目录失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>打开随包分发的第三方组件与数据来源声明（exe 同目录的 third-party-notices.md）。</summary>
+    private async void OnOpenThirdPartyNotices(object sender, RoutedEventArgs e)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "third-party-notices.md");
+        try
+        {
+            if (!File.Exists(path))
+            {
+                await ShowSettingsInfoAsync("第三方声明",
+                    "未找到 third-party-notices.md。\n该文件随安装包分发，位于 SnapFlow 安装目录；也可在源码仓库的 docs/ 目录查看。");
+                return;
+            }
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Info("打开第三方声明失败：" + ex.Message);
         }
     }
 }

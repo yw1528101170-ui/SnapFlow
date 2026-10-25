@@ -55,7 +55,7 @@ public sealed class VaultKey : IDisposable
         }
     }
 
-    /// <summary>复制一把独立密钥（改主密码时新旧密钥需并存一小段时间）。</summary>
+    /// <summary>复制一把独立密钥（测试与诊断用；生产改密走「新派生 + 落盘后原子换钥」，不需要并存副本）。</summary>
     public VaultKey Clone()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

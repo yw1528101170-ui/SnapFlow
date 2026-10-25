@@ -11,9 +11,6 @@ public sealed class VaultSnapshot
     public required VaultHeader Header { get; init; }
 
     public required VaultData Data { get; init; }
-
-    /// <summary>捕获快照时的编辑版本号，用于判断"这一轮之后是否又有新编辑"。</summary>
-    public long DataVersion { get; init; }
 }
 
 public enum VaultSaveState
