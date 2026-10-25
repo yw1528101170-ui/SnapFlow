@@ -34,6 +34,7 @@ public sealed class AppHost
     // 密码库会话与主窗口：窗口与 SettingsWindow 一样惰性创建，会话在组合根就位。
     private VaultSession? _vault;
     private PasswordWindow? _passwordWindow;
+    private VaultBridge? _vaultBridge;
 
     /// <summary>密码库会话。UI 线程访问；组合根在设置就绪后创建。</summary>
     public VaultSession Vault => _vault ??= new VaultSession(_queue, () => _settingsApplier.Current);
@@ -207,6 +208,18 @@ public sealed class AppHost
         SensitiveForeground.SetIgnored(_settings.IgnoredProcesses);
         SensitiveForeground.SetRecordTerminals(_settings.RecordTerminals);
         _clipboard.Listen();
+        // 浏览器自动填充桥：常驻监听命名管道；关联确认用 MessageBox（密码库窗口可能未打开）。
+        _vaultBridge = new VaultBridge(_queue, Vault, () => _settings);
+        _vaultBridge.PairRequested += (pairId, displayName) =>
+        {
+            var res = NativeMethods.MessageBox(
+                _message.Handle,
+                $"浏览器「{displayName}」请求关联 SnapFlow 密码库。\n\n关联后即可在你解锁密码库时读取匹配站点的凭据。\n\n只在你亲自安装并启用扩展时才允许。",
+                "SnapFlow - 浏览器关联确认",
+                NativeMethods.MbYesNo | NativeMethods.MbIconQuestion | NativeMethods.MbDefButton2);
+            _vaultBridge!.CompletePair(pairId, res == NativeMethods.IdYes);
+        };
+        _vaultBridge.Start();
         // 安装向导勾选的自启项只写得到注册表：仅在首次初始化（设置文件尚不存在、还没有用户偏好）时采纳，
         // 回写设置文件后设置页 / 托盘菜单才会显示为已开启；之后严格以设置为准，
         // 不再因注册表残留值而复活，避免用户关掉的自启每次启动又被写回。
@@ -284,6 +297,7 @@ public sealed class AppHost
 
         // 密码库：退出即锁定清场（清密钥、删 Hello 副本、停计时器）。
         Safe(() => _vault?.Dispose());
+        Safe(() => _vaultBridge?.Dispose());
 
         Safe(_pins.CloseAllOnShutdown);
         Safe(_history.AllowClose);

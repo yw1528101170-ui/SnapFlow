@@ -556,7 +556,7 @@ public sealed partial class SettingsWindow : Window
             // 密码库热键暂不在设置页录制（复用主窗口托盘配置）；原样携带避免被整体替换吞掉。
             VaultHotkey = _host.Settings.VaultHotkey,
             VaultLockMinutes = VaultLockBox.SelectedItem is ComboBoxItem lockItem && int.TryParse(lockItem.Tag?.ToString(), out var lockMinutes) ? lockMinutes : 5,
-            VaultBrowserIntegration = VaultBrowserSwitch.IsOn,
+            VaultBrowserIntegration = _host.Settings.VaultBrowserIntegration,
             RetentionDays = (int)Math.Clamp(Math.Round(retention), AppSettings.MinRetentionDays, AppSettings.MaxRetentionDays),
             Paused = _host.IsPaused,
             RunAtStartup = StartupSwitch.IsOn,
@@ -617,7 +617,7 @@ public sealed partial class SettingsWindow : Window
             <= 60 => 4,
             _ => 5,
         };
-        VaultBrowserSwitch.IsOn = _host.Settings.VaultBrowserIntegration;
+        RefreshBrowserIntegrationState();
 
         if (!vault.Exists)
         {
@@ -684,10 +684,43 @@ public sealed partial class SettingsWindow : Window
         ApplyAndSave();
     }
 
-    private void OnVaultBrowserToggled(object sender, RoutedEventArgs e)
+    // ---------------- 浏览器自动填充集成 ----------------
+
+    private void RefreshBrowserIntegrationState()
     {
-        if (_loading) return;
+        if (VaultBrowserStatus is null)
+        {
+            return;
+        }
+
+        var enabled = BrowserIntegration.IsEnabled() && _host.Settings.VaultBrowserIntegration;
+        VaultBrowserStatus.Text = enabled ? "已启用（扩展关联时桌面端会确认）" : "未启用";
+        VaultBrowserEnableButton.IsEnabled = !enabled;
+        VaultBrowserDisableButton.IsEnabled = enabled;
+    }
+
+    private void OnVaultBrowserEnable(object sender, RoutedEventArgs e)
+    {
+        var error = BrowserIntegration.Enable(VaultExtIdBox.Text);
+        if (error != null)
+        {
+            ShowError(error);
+            return;
+        }
+
+        _host.Settings.VaultBrowserIntegration = true;
         ApplyAndSave();
+        RefreshBrowserIntegrationState();
+        _host.Toast.Show("浏览器集成已启用（扩展首次连接时会请求确认）");
+    }
+
+    private void OnVaultBrowserDisable(object sender, RoutedEventArgs e)
+    {
+        BrowserIntegration.Disable();
+        _host.Settings.VaultBrowserIntegration = false;
+        ApplyAndSave();
+        RefreshBrowserIntegrationState();
+        _host.Toast.Show("浏览器集成已禁用");
     }
 
     // 密钥与端点的实时状态徽标：PasswordBox 看不出是否已配置，端点写错也只在点“测试连接”时才暴露。

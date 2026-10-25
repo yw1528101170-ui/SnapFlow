@@ -14,6 +14,12 @@ public static class Program
             Environment.Exit(SelfTest.Run());
         }
 
+        // 浏览器原生消息宿主：无 UI、无托盘、不占单实例互斥体（浏览器可能同时拉起多个）。
+        if (args.Contains("--native-messaging"))
+        {
+            Environment.Exit(NativeMessagingHost.Run());
+        }
+
         if (args.Contains("--capture-test"))
         {
             AttachParentConsole();

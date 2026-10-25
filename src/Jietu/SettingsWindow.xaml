@@ -969,19 +969,27 @@
                                         </ComboBox>
                                     </Grid>
                                     <Rectangle Style="{StaticResource SettingsDividerStyle}"/>
-                                    <Grid Padding="14,12" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                                        <Border Style="{StaticResource RowTileGreenStyle}">
-                                            <FontIcon Glyph="&#xE774;" FontSize="12" Foreground="{ThemeResource RowGlyphGreenBrush}"
-                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                                            <TextBlock Text="浏览器自动填充" Style="{StaticResource SettingsRowTitleStyle}"/>
-                                            <TextBlock Style="{StaticResource SettingsRowHintStyle}"
-                                                       Text="允许已关联的浏览器扩展请求密码库中的凭据"/>
+                                    <StackPanel Padding="14,12" Spacing="8">
+                                        <StackPanel Orientation="Horizontal" Spacing="12">
+                                            <Border Style="{StaticResource RowTileGreenStyle}">
+                                                <FontIcon Glyph="&#xE774;" FontSize="12" Foreground="{ThemeResource RowGlyphGreenBrush}"
+                                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock Text="浏览器自动填充" Style="{StaticResource SettingsRowTitleStyle}"/>
+                                                <TextBlock x:Name="VaultBrowserStatus" Style="{StaticResource SettingsRowHintStyle}"
+                                                           Text="未启用"/>
+                                            </StackPanel>
                                         </StackPanel>
-                                        <ToggleSwitch x:Name="VaultBrowserSwitch" Grid.Column="2" MinWidth="0" HorizontalAlignment="Right"
-                                                      OnContent="" OffContent="" Toggled="OnVaultBrowserToggled"/>
-                                    </Grid>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBox x:Name="VaultExtIdBox" PlaceholderText="扩展 ID（chrome://extensions 中复制）"
+                                                     Width="300" CornerRadius="7" FontSize="12"/>
+                                            <Button x:Name="VaultBrowserEnableButton" Content="启用" Click="OnVaultBrowserEnable" CornerRadius="7"/>
+                                            <Button x:Name="VaultBrowserDisableButton" Content="禁用" Click="OnVaultBrowserDisable" CornerRadius="7"/>
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource SettingsRowHintStyle}" TextWrapping="Wrap"
+                                                   Text="先在浏览器加载 ext/snapflow-vault 扩展，再把其 ID 填到这里。关联时桌面端会弹出确认。"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
