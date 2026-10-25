@@ -156,12 +156,14 @@ internal sealed class VaultBridge : IDisposable
             PipeAccessRights.FullControl,
             AccessControlType.Allow));
 
+        // 注意：CurrentUserOnly 与自定义 PipeSecurity 互斥（运行时校验拒绝）；
+        // 同用户限制由显式 DACL 承担。
         return NamedPipeServerStreamAcl.Create(
             PipeName,
             PipeDirection.InOut,
             4,
             PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
+            PipeOptions.Asynchronous,
             0,
             0,
             security);

@@ -63,7 +63,7 @@ internal sealed class MessageWindow
         }
 
         // 订阅会话锁定/解锁通知（不订阅 unlock）；失败只影响「锁屏立即锁」这一体验项。
-        if (!WtsRegisterSessionNotification(Handle, 0 /*NOTIFY_FOR_THIS_SESSION*/))
+        if (!WTSRegisterSessionNotification(Handle, 0 /*NOTIFY_FOR_THIS_SESSION*/))
         {
             Log.Info("注册会话锁定通知失败，锁屏时密码库将依赖空闲超时锁定。");
         }
@@ -75,16 +75,16 @@ internal sealed class MessageWindow
     {
         if (Handle != IntPtr.Zero)
         {
-            WtsUnRegisterSessionNotification(Handle);
+            WTSUnRegisterSessionNotification(Handle);
             NativeMethods.DestroyWindow(Handle);
         }
     }
 
     [System.Runtime.InteropServices.DllImport("wtsapi32.dll")]
-    private static extern bool WtsRegisterSessionNotification(IntPtr hWnd, uint dwFlags);
+    private static extern bool WTSRegisterSessionNotification(IntPtr hWnd, uint dwFlags);
 
     [System.Runtime.InteropServices.DllImport("wtsapi32.dll")]
-    private static extern bool WtsUnRegisterSessionNotification(IntPtr hWnd);
+    private static extern bool WTSUnRegisterSessionNotification(IntPtr hWnd);
 
     private IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
