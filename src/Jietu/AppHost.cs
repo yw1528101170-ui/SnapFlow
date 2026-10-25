@@ -306,6 +306,12 @@ public sealed class AppHost
         {
             Log.Error(ex);
         }
+
+        // Application.Current.Exit() 并不保证让 Application.Start 返回（消息循环可能继续泵），
+        // 一旦未退出，进程就成了无托盘、无热键却占着 exe 的僵尸（见 Program.Main 兜底注释）。
+        // 至此清理已全部完成，直接确定性终止；若 Exit() 生效，这里不会被执行到。
+        Log.Info("退出：清理完成，结束进程");
+        Environment.Exit(0);
     }
 
     /// <summary>退出清理专用：单步失败只记录日志，绝不中断后续释放。</summary>
