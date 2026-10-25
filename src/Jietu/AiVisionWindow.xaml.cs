@@ -30,6 +30,10 @@ public sealed partial class AiVisionWindow : Window
     private int _askToken;
     private CancellationTokenSource? _cts;
     private string? _pendingAsk;
+    private readonly List<VisionTurn> _turns = [];
+    private bool _streaming;
+    private bool _rawAnswerMode;
+    private ImageViewerWindow? _viewer;
 
     private Storyboard? _loaderStoryboard;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _copyTimer;
@@ -71,6 +75,7 @@ public sealed partial class AiVisionWindow : Window
     {
         _currentPng = png;
         _lastAnswer = null;
+        _turns.Clear();
         ResultText.Text = string.Empty;
 
         var settings = _host.Settings;
@@ -91,6 +96,8 @@ public sealed partial class AiVisionWindow : Window
             using var sbm = await ImageBytes.FromPngAsync(png);
             ImageInfoLabel.Text = $"{sbm.PixelWidth} × {sbm.PixelHeight} · {png.Length / 1024:N0} KB";
             PopPreview();
+            // 查看器若还开着，同步换成新截图（不抢焦点）
+            _viewer?.ShowImage(png, activate: false);
         }
         catch (Exception ex)
         {
@@ -157,7 +164,7 @@ public sealed partial class AiVisionWindow : Window
 
     // ── 询问 ───────────────────────────────────────────────────────────
 
-    private async Task AskAsync(string prompt)
+    private async Task AskAsync(string prompt, AiAskOptions? options = null)
     {
         if (_currentPng == null)
         {
@@ -180,10 +187,21 @@ public sealed partial class AiVisionWindow : Window
 
         EnterBusyState(prompt);
 
+        // 多轮上下文：图片只随首轮 user 消息发送（多带一次图就多一份视觉计费），追问为纯文本轮。
+        // 这里都是围绕一张截图的短会话，不做事后截断。
+        var isFirstTurn = _turns.Count == 0;
+        var userTurn = new VisionTurn("user", prompt, isFirstTurn ? _currentPng : null);
+        var turns = new List<VisionTurn>(_turns.Count + 1);
+        turns.AddRange(_turns);
+        turns.Add(userTurn);
+
+        var askOptions = options ?? new AiAskOptions(Detail: _host.Settings.AiDetailLow ? "low" : null);
+        var progress = new Progress<string>(OnStreamDelta);
+
         string answer;
         try
         {
-            answer = await AiVisionService.AskVisionAsync(_currentPng, prompt, _host.Settings, cancellation.Token);
+            answer = await AiVisionService.AskVisionAsync(turns, _host.Settings, askOptions, cancellation.Token, progress);
         }
         catch (Exception ex)
         {
@@ -199,6 +217,8 @@ public sealed partial class AiVisionWindow : Window
         cancellation.Dispose();
         _cts = null;
         _busy = false;
+        bool streamed = _streaming;
+        _streaming = false;
         LeaveBusyState();
 
         // 收尾时若有排队的新请求，跳过本次结果展示，立即按最新内容重新发起
@@ -211,6 +231,14 @@ public sealed partial class AiVisionWindow : Window
 
         if (cancelled)
         {
+            // 已流式显示了一部分内容时保留它，不要弹回空态把用户正在看的东西抹掉
+            if (streamed && ResultText.Text.Length > 0)
+            {
+                _lastAnswer = ResultText.Text;
+                SetStatus("已停止", "SnapFlowWarningBrush");
+                return;
+            }
+
             if (_lastAnswer != null)
             {
                 RevealAnswer(_lastAnswer, animate: true);
@@ -225,6 +253,14 @@ public sealed partial class AiVisionWindow : Window
             return;
         }
 
+        // 失败/提示文案不入历史：重试会重新作为首轮带图发送，避免把报错喂给模型
+        var (label, _) = Classify(answer);
+        if (label is "已完成" or "已截断")
+        {
+            _turns.Add(userTurn);
+            _turns.Add(new VisionTurn("assistant", answer, null));
+        }
+
         _lastAnswer = answer;
         RevealAnswer(answer, animate: true);
     }
@@ -233,9 +269,11 @@ public sealed partial class AiVisionWindow : Window
 
     private void EnterBusyState(string prompt)
     {
+        _streaming = false;
         SetStatus("分析中", "SnapFlowAccentBrush");
         EmptyHost.Visibility = Visibility.Collapsed;
         ResultText.Visibility = Visibility.Collapsed;
+        ResultMarkdown.Visibility = Visibility.Collapsed;
         ResultScroller.Visibility = Visibility.Collapsed;
 
         LoadingStatusText.Text = $"正在用 {ModelBadgeText.Text} 解析这张截屏…";
@@ -264,25 +302,75 @@ public sealed partial class AiVisionWindow : Window
         SetBusyChrome(false);
     }
 
-    private void RevealAnswer(string answer, bool animate)
+    /// <summary>首个流式片段到达时从骨架屏切到正文，后续片段追加并跟随滚动到底部。</summary>
+    private void OnStreamDelta(string piece)
+    {
+        if (!_busy)
+        {
+            return;
+        }
+
+        if (!_streaming)
+        {
+            _streaming = true;
+            SetStatus("生成中", "SnapFlowAccentBrush");
+            StopLoader();
+            int token = _askToken;
+            Motion.Fade(LoadingHost, 1, 0, 150, Motion.EaseIn, 0, () =>
+            {
+                if (token == _askToken)
+                {
+                    LoadingHost.Visibility = Visibility.Collapsed;
+                }
+            });
+
+            ResultText.Text = string.Empty;
+            ResultText.Visibility = Visibility.Visible;
+            ResultText.Opacity = 1;
+            ResultMarkdown.Visibility = Visibility.Collapsed;
+            ResultScroller.Visibility = Visibility.Visible;
+        }
+
+        ResultText.Text += piece;
+        ResultScroller.ChangeView(null, ResultScroller.ScrollableHeight, null, true);
+    }
+
+    private void RevealAnswer(string answer, bool animate, bool keepScroll = false)
     {
         var (label, brushKey) = Classify(answer);
         SetStatus(label, brushKey);
 
-        ResultText.Text = answer;
+        // 错误/提示类文案与「原文」模式下保持纯文本；成功回答按 Markdown 轻量渲染
+        var plain = _rawAnswerMode || label is not ("已完成" or "已截断");
+        if (plain)
+        {
+            ResultMarkdown.Visibility = Visibility.Collapsed;
+            ResultText.Text = answer;
+            ResultText.Visibility = Visibility.Visible;
+            ResultText.Opacity = 1;
+        }
+        else
+        {
+            ResultText.Visibility = Visibility.Collapsed;
+            MarkdownLite.Render(ResultMarkdown, answer);
+            ResultMarkdown.Visibility = Visibility.Visible;
+        }
+
         ResultScroller.Visibility = Visibility.Visible;
-        ResultText.Visibility = Visibility.Visible;
-        ResultScroller.ChangeView(null, 0, null, true);
+        if (!keepScroll)
+        {
+            ResultScroller.ChangeView(null, 0, null, true);
+        }
 
         if (!animate)
         {
-            ResultText.Opacity = 1;
+            ResultHost.Opacity = 1;
             return;
         }
 
-        var transform = Motion.Prep(ResultText);
-        Motion.Fade(ResultText, 0, 1, 320, Motion.Ease, 40);
-        Motion.MoveY(ResultText, transform, 10, 0, 470, Motion.Spring(0.1), 40);
+        var transform = Motion.Prep(ResultHost);
+        Motion.Fade(ResultHost, 0, 1, 320, Motion.Ease, 40);
+        Motion.MoveY(ResultHost, transform, 10, 0, 470, Motion.Spring(0.1), 40);
     }
 
     private static (string Label, string BrushKey) Classify(string answer)
@@ -298,6 +386,11 @@ public sealed partial class AiVisionWindow : Window
             || answer.StartsWith(AiVisionContract.NoContentPrefix, StringComparison.Ordinal))
         {
             return ("请求失败", "SnapFlowDangerBrush");
+        }
+
+        if (answer.EndsWith(AiVisionContract.TruncatedSuffix, StringComparison.Ordinal))
+        {
+            return ("已截断", "SnapFlowWarningBrush");
         }
 
         return ("已完成", "SnapFlowSuccessBrush");
@@ -465,7 +558,7 @@ public sealed partial class AiVisionWindow : Window
 
     private async void OnQuickPromptClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: string prompt } button)
+        if (sender is not Button { Tag: string tag } button)
         {
             return;
         }
@@ -473,13 +566,38 @@ public sealed partial class AiVisionWindow : Window
         var transform = Motion.Prep(button);
         Motion.Scale(button, transform, 0.94, 1, 400, Motion.Spring(0.26));
 
-        PromptInput.Text = prompt;
+        // 提取/转换类任务标记 precise：temperature 0 + 更高的输出上限，表格更稳也更不容易被截断
+        AiAskOptions? options = null;
+        const string PrecisePrefix = "precise|";
+        if (tag.StartsWith(PrecisePrefix, StringComparison.Ordinal))
+        {
+            options = new AiAskOptions(Temperature: 0, MaxTokens: 4000);
+            tag = tag[PrecisePrefix.Length..];
+        }
+
+        PromptInput.Text = tag;
         if (_busy)
         {
             return;
         }
 
-        await AskAsync(prompt);
+        await AskAsync(tag, options);
+    }
+
+    /// <summary>「原文/渲染」切换：错误文案与本开关无关，始终以纯文本展示。</summary>
+    private void OnToggleRenderClick(object sender, RoutedEventArgs e)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _rawAnswerMode = !_rawAnswerMode;
+        RenderToggleButton.Content = _rawAnswerMode ? "渲染" : "原文";
+        if (_lastAnswer != null)
+        {
+            RevealAnswer(_lastAnswer, animate: false, keepScroll: true);
+        }
     }
 
     private void OnPromptFocus(object sender, RoutedEventArgs e)
@@ -561,6 +679,56 @@ public sealed partial class AiVisionWindow : Window
     private void OnOpenSettingsClick(object sender, RoutedEventArgs e)
     {
         _host.ShowSettings();
+    }
+
+    // ── 全尺寸预览：整图缩略 + 点击弹出查看器 ────────────────────────
+
+    private void OnPreviewTapped(object sender, TappedRoutedEventArgs e) => OpenFullPreview();
+
+    private void OnPreviewZoomClick(object sender, RoutedEventArgs e) => OpenFullPreview();
+
+    private void OpenFullPreview()
+    {
+        if (_currentPng == null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_viewer == null)
+            {
+                _viewer = new ImageViewerWindow();
+                // Closed 只在用户真关掉时触发；置空后下次点击重建，避免持有已销毁窗口
+                _viewer.Closed += OnViewerClosed;
+            }
+
+            _viewer.ShowImage(_currentPng);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+        }
+    }
+
+    private void OnViewerClosed(object sender, WindowEventArgs args)
+    {
+        if (_viewer != null)
+        {
+            _viewer.Closed -= OnViewerClosed;
+            _viewer = null;
+        }
+    }
+
+    private void OnPreviewPointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        PreviewZoomButton.Visibility = Visibility.Visible;
+        Motion.Fade(PreviewZoomButton, 0, 1, 150, Motion.Ease);
+    }
+
+    private void OnPreviewPointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        Motion.Fade(PreviewZoomButton, 1, 0, 150, Motion.EaseIn, 0, () => PreviewZoomButton.Visibility = Visibility.Collapsed);
     }
 
     /// <summary>Esc：分析中先停止请求，闲置时收起面板。</summary>

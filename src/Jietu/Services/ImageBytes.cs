@@ -271,6 +271,52 @@ internal static class ImageBytes
         return (bitmap, scale);
     }
 
+    /// <summary>
+    /// 发给视觉模型前的等比压缩：最长边超过 <paramref name="maxEdge"/> 才缩，小图原样返回。
+    /// 视觉 token 按分辨率计费且部分网关拒收超大请求体；2048 对截图理解足够，小字识别交由用户追问原图。
+    /// </summary>
+    public static async Task<byte[]> ShrinkPngForVisionAsync(byte[] png, uint maxEdge = 2048)
+    {
+        try
+        {
+            using var stream = await WriteStreamAsync(png);
+            var decoder = await BitmapDecoder.CreateAsync(stream);
+            var sourceWidth = Math.Max(1u, decoder.PixelWidth);
+            var sourceHeight = Math.Max(1u, decoder.PixelHeight);
+            if (sourceWidth <= maxEdge && sourceHeight <= maxEdge)
+            {
+                return png;
+            }
+
+            var factor = Math.Min(maxEdge / (double)sourceWidth, maxEdge / (double)sourceHeight);
+            var targetWidth = Math.Max(1u, (uint)Math.Floor(sourceWidth * factor));
+            var targetHeight = Math.Max(1u, (uint)Math.Floor(sourceHeight * factor));
+            var pixels = await decoder.GetPixelDataAsync(
+                BitmapPixelFormat.Bgra8,
+                BitmapAlphaMode.Premultiplied,
+                new BitmapTransform
+                {
+                    ScaledWidth = targetWidth,
+                    ScaledHeight = targetHeight,
+                    InterpolationMode = BitmapInterpolationMode.Linear,
+                },
+                ExifOrientationMode.RespectExifOrientation,
+                ColorManagementMode.DoNotColorManage);
+
+            using var output = new InMemoryRandomAccessStream();
+            var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output);
+            encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, targetWidth, targetHeight, 96, 96, pixels.DetachPixelData());
+            await encoder.FlushAsync();
+            return await ReadStreamAsync(output);
+        }
+        catch (Exception ex)
+        {
+            // 压缩失败不应阻断请求：退回原图交由服务端处理。
+            Log.Error(ex);
+            return png;
+        }
+    }
+
     public static async Task<SoftwareBitmap> ScaleDownAsync(SoftwareBitmap source, uint max)
     {
         if (max == 0 || ((uint)source.PixelWidth <= max && (uint)source.PixelHeight <= max))

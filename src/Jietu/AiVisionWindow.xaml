@@ -417,13 +417,24 @@
                         <Border CornerRadius="10" Margin="7"
                                 Background="{ThemeResource AiInsetFillBrush}"
                                 BorderBrush="{ThemeResource AiCardStrokeBrush}" BorderThickness="1">
-                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                                          HorizontalScrollMode="Auto" VerticalScrollMode="Auto"
-                                          Padding="2">
+                            <!-- 整图适配显示：点击弹出全尺寸查看窗口，不再在小窗里滚动看局部 -->
+                            <Grid x:Name="PreviewHost" Tapped="OnPreviewTapped"
+                                  PointerEntered="OnPreviewPointerEntered" PointerExited="OnPreviewPointerExited"
+                                  ToolTipService.ToolTip="点击查看全尺寸大图">
                                 <Image x:Name="PreviewImage" Stretch="Uniform"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                        RenderTransformOrigin="0.5,0.5"/>
-                            </ScrollViewer>
+                                <Button x:Name="PreviewZoomButton" Style="{StaticResource AiGhostStyle}"
+                                        Visibility="Collapsed" Opacity="0" Background="#B31E1E24"
+                                        HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="10"
+                                        Click="OnPreviewZoomClick"
+                                        ToolTipService.ToolTip="弹出全尺寸查看窗口">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE8A7;" FontSize="11.5" Foreground="White"/>
+                                        <TextBlock Text="放大查看" FontSize="11.5" Foreground="White"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
                         </Border>
                         <!-- 顶部一道极细高光，模拟玻璃受光 -->
                         <Border Height="1" Margin="16,0" VerticalAlignment="Top" IsHitTestVisible="False"
@@ -493,7 +504,7 @@
                               HorizontalScrollMode="Auto" VerticalScrollMode="Disabled" Margin="0,0,0,10">
                     <StackPanel x:Name="ChipsHost" Orientation="Horizontal" Spacing="7">
                         <Button x:Name="ChipCode" Style="{StaticResource AiChipStyle}" Click="OnQuickPromptClick"
-                                Tag="请分析并提取这张图里的代码，说明核心逻辑，并指出潜在 Bug 或优化建议。">
+                                Tag="precise|请分析并提取这张图里的代码，说明核心逻辑，并指出潜在 Bug 或优化建议。">
                             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                 <FontIcon Glyph="&#xE943;" FontSize="11" Foreground="{ThemeResource SnapFlowSkyBrush}"/>
                                 <TextBlock Text="代码排查" FontSize="12" VerticalAlignment="Center"
@@ -501,7 +512,7 @@
                             </StackPanel>
                         </Button>
                         <Button x:Name="ChipTable" Style="{StaticResource AiChipStyle}" Click="OnQuickPromptClick"
-                                Tag="请把这张截图中的所有表格数据转换为标准的 Markdown 表格格式输出。">
+                                Tag="precise|请把这张截图中的所有表格数据转换为标准的 Markdown 表格格式输出。">
                             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                 <TextBlock Text="▦" FontSize="11.5" VerticalAlignment="Center"
                                            Foreground="{ThemeResource SnapFlowAccentBrush}"/>
@@ -518,7 +529,7 @@
                             </StackPanel>
                         </Button>
                         <Button x:Name="ChipTranslate" Style="{StaticResource AiChipStyle}" Click="OnQuickPromptClick"
-                                Tag="请将这张截图中的所有文本翻译为地道流畅的中文。">
+                                Tag="precise|请将这张截图中的所有文本翻译为地道流畅的中文。">
                             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                 <FontIcon Glyph="&#xE774;" FontSize="11" Foreground="{ThemeResource SnapFlowSuccessBrush}"/>
                                 <TextBlock Text="中文翻译" FontSize="12" VerticalAlignment="Center"
@@ -555,6 +566,10 @@
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                                <Button x:Name="RenderToggleButton" Style="{StaticResource AiGhostStyle}"
+                                        Height="28" Padding="10,0" CornerRadius="9" Content="原文"
+                                        Click="OnToggleRenderClick"
+                                        ToolTipService.ToolTip="切换 Markdown 渲染 / 原文显示"/>
                                 <Button x:Name="CopyResultButton" Style="{StaticResource AiGhostStyle}"
                                         Width="28" Height="28" Padding="0" CornerRadius="9"
                                         Click="OnCopyResultClick" ToolTipService.ToolTip="复制回答">
@@ -572,9 +587,12 @@
                             <ScrollViewer x:Name="ResultScroller" Padding="16,0,16,14"
                                           HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled"
                                           VerticalScrollBarVisibility="Auto" VerticalScrollMode="Auto">
-                                <TextBlock x:Name="ResultText" TextWrapping="Wrap" FontSize="13" LineHeight="22"
-                                           IsTextSelectionEnabled="True" IsTabStop="False"
-                                           Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                                <StackPanel x:Name="ResultHost">
+                                    <TextBlock x:Name="ResultText" TextWrapping="Wrap" FontSize="13" LineHeight="22"
+                                               IsTextSelectionEnabled="True" IsTabStop="False"
+                                               Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                                    <StackPanel x:Name="ResultMarkdown" Spacing="8" Visibility="Collapsed"/>
+                                </StackPanel>
                             </ScrollViewer>
 
                             <!-- 空态 -->
@@ -662,7 +680,7 @@
                     <TextBlock x:Name="ComposerHint" Text="Enter 发送 · Shift + Enter 换行" FontSize="10"
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
-                    <TextBlock x:Name="HintRight" Grid.Column="1" Text="由你配置的视觉模型处理" FontSize="10"
+                    <TextBlock x:Name="HintRight" Grid.Column="1" Text="多轮追问保留上下文 · 回答流式输出" FontSize="10"
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
                 </Grid>

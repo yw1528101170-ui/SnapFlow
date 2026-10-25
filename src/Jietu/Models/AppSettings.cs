@@ -10,8 +10,10 @@ public sealed class AppSettings
     public const string DefaultAiModel = "gpt-4o-mini";
     public const string DefaultAiPrompt = "请分析并总结这张截图的内容：若是代码请解释核心逻辑与排查建议，若是表格或图文请提取关键信息。";
 
-    public string RegionHotkey { get; set; } = "Alt+A";
-    public string HistoryHotkey { get; set; } = "Alt+V";
+    public const string DefaultRegionHotkey = "Alt+A";
+    public const string DefaultHistoryHotkey = "Alt+V";
+    public string RegionHotkey { get; set; } = DefaultRegionHotkey;
+    public string HistoryHotkey { get; set; } = DefaultHistoryHotkey;
     public int RetentionDays { get; set; } = 30;
     public bool Paused { get; set; }
     public bool RunAtStartup { get; set; }
@@ -28,4 +30,5 @@ public sealed class AppSettings
     public string AiApiKey { get; set; } = "";
     public string AiModel { get; set; } = DefaultAiModel;
     public string AiPrompt { get; set; } = DefaultAiPrompt;
+    public bool AiDetailLow { get; set; }
 }

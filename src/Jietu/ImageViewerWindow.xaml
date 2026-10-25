@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Jietu.ImageViewerWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="截图查看">
+    <!-- 查看器用固定深色画布（照片查看器的惯例，与主题无关），标准标题栏保留原生最大化 -->
+    <Grid x:Name="Root" Background="#141416">
+        <Grid.Resources>
+            <ResourceDictionary>
+                <Style x:Key="ViewerToolStyle" TargetType="Button">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Width" Value="30"/>
+                    <Setter Property="Height" Value="30"/>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="MinWidth" Value="0"/>
+                    <Setter Property="MinHeight" Value="0"/>
+                    <Setter Property="CornerRadius" Value="15"/>
+                    <Setter Property="Foreground" Value="#E6FFFFFF"/>
+                    <Setter Property="UseSystemFocusVisuals" Value="False"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Grid x:Name="ToolRoot" Background="Transparent">
+                                    <VisualStateManager.VisualStateGroups>
+                                        <VisualStateGroup x:Name="CommonStates">
+                                            <VisualState x:Name="Normal"/>
+                                            <VisualState x:Name="PointerOver">
+                                                <VisualState.Setters>
+                                                    <Setter Target="HoverPlate.Opacity" Value="1"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                            <VisualState x:Name="Pressed">
+                                                <VisualState.Setters>
+                                                    <Setter Target="HoverPlate.Opacity" Value="1"/>
+                                                    <Setter Target="ToolRoot.Opacity" Value="0.8"/>
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                        </VisualStateGroup>
+                                    </VisualStateManager.VisualStateGroups>
+                                    <Border x:Name="HoverPlate" Opacity="0" CornerRadius="15" Background="#2EFFFFFF"/>
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ResourceDictionary>
+        </Grid.Resources>
+
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="Escape" Invoked="OnEscapeInvoked"/>
+        </Grid.KeyboardAccelerators>
+
+        <ScrollViewer x:Name="Canvas"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollMode="Auto" VerticalScrollMode="Auto"
+                      PointerWheelChanged="OnCanvasWheel">
+            <Image x:Name="View" Stretch="None"
+                   PointerPressed="OnViewPointerPressed"
+                   PointerMoved="OnViewPointerMoved"
+                   PointerReleased="OnViewPointerReleased"
+                   PointerCanceled="OnViewPointerReleased"
+                   DoubleTapped="OnViewDoubleTapped"/>
+        </ScrollViewer>
+
+        <!-- 顶部悬浮工具条：缩放 / 适应 / 原始尺寸 -->
+        <Border HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,12,0,0"
+                Background="#CC232328" BorderBrush="#30FFFFFF" BorderThickness="1"
+                CornerRadius="18" Padding="6,4">
+            <StackPanel Orientation="Horizontal" Spacing="2">
+                <Button x:Name="ZoomOutButton" Style="{StaticResource ViewerToolStyle}" Click="OnZoomOut"
+                        ToolTipService.ToolTip="缩小 (滚轮)"><TextBlock Text="−" FontSize="15" FontWeight="SemiBold"/></Button>
+                <TextBlock x:Name="ZoomText" Text="100%" Width="46" TextAlignment="Center" FontSize="11"
+                           VerticalAlignment="Center" Foreground="#CCFFFFFF"/>
+                <Button x:Name="ZoomInButton" Style="{StaticResource ViewerToolStyle}" Click="OnZoomIn"
+                        ToolTipService.ToolTip="放大 (滚轮)"><TextBlock Text="＋" FontSize="14" FontWeight="SemiBold"/></Button>
+                <Rectangle Width="1" Height="14" Margin="6,0" Fill="#26FFFFFF"/>
+                <Button x:Name="FitButton" Style="{StaticResource ViewerToolStyle}" Click="OnFitClick"
+                        ToolTipService.ToolTip="适应窗口 (双击切换)"><TextBlock Text="适应" FontSize="11"/></Button>
+                <Button x:Name="ActualButton" Style="{StaticResource ViewerToolStyle}" Click="OnActualClick"
+                        ToolTipService.ToolTip="按原始像素显示"><TextBlock Text="1:1" FontSize="11"/></Button>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
