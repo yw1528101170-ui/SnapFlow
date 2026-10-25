@@ -355,7 +355,18 @@ public sealed partial class OverlayWindow
         UndoButton.IsEnabled = _strokes.Count > 0;
         if (RedoButton != null)
         {
-            RedoButton.IsEnabled = _redo.Count > 0;
+            // 重做按钮只在有可重做内容时出现（宽度变化后需要重新居中工具栏）。
+            var showRedo = _redo.Count > 0;
+            RedoButton.IsEnabled = showRedo;
+            var visibility = showRedo ? Visibility.Visible : Visibility.Collapsed;
+            if (RedoButton.Visibility != visibility)
+            {
+                RedoButton.Visibility = visibility;
+                if (_locked)
+                {
+                    PlaceToolbar();
+                }
+            }
         }
     }
 

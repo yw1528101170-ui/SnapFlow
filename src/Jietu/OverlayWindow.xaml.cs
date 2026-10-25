@@ -61,7 +61,6 @@ public sealed partial class OverlayWindow : Window
     private const int LoupeSample = 31;
     private const int LoupeZoom = 4;
     private const int LoupePixels = LoupeSample * LoupeZoom;
-    private const double CompactToolbarWidth = 800;
     private byte _blue = 68;
     private byte _green = 68;
     private byte _red = 239;
@@ -96,6 +95,16 @@ public sealed partial class OverlayWindow : Window
     private readonly SolidColorBrush _loupeColorBrush = new(Color.FromArgb(255, 0, 0, 0));
     private Stream? _loupeStream;
     private long _mosaicStamp;
+    private bool _rightDiscard;
+    private int _hintFadeSeq;
+    private static readonly InputSystemCursor CrossCursor = InputSystemCursor.Create(InputSystemCursorShape.Cross);
+    private static readonly InputSystemCursor ArrowCursor = InputSystemCursor.Create(InputSystemCursorShape.Arrow);
+    private static readonly InputSystemCursor SizeAllCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeAll);
+    private static readonly InputSystemCursor SizeNwseCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeNorthwestSoutheast);
+    private static readonly InputSystemCursor SizeNeswCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeNortheastSouthwest);
+    private static readonly InputSystemCursor SizeNsCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeNorthSouth);
+    private static readonly InputSystemCursor SizeEwCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
+    private InputSystemCursor _currentCursor = CrossCursor;
 
     public event Action<string>? CopyTextRequested;
 
@@ -130,8 +139,8 @@ public sealed partial class OverlayWindow : Window
         Root.PointerReleased += OnPointerReleased;
         Root.PointerWheelChanged += OnWheel;
         Root.PreviewKeyDown += OnKeyDown;
-        SetCursor(Root, InputSystemCursor.Create(InputSystemCursorShape.Cross));
-        SetCursor(Toolbar, InputSystemCursor.Create(InputSystemCursorShape.Arrow));
+        SetCursor(Root, CrossCursor);
+        SetCursor(Toolbar, ArrowCursor);
         for (var i = 0; i < _handles.Length; i++)
         {
             var handle = new Border
@@ -252,6 +261,8 @@ public sealed partial class OverlayWindow : Window
         }
         AnimateIn(Hint, 12, 520, 0.96);
         DispatcherQueue.TryEnqueue(HighlightAtCursor);
+        _currentCursor = CrossCursor;
+        SetCursor(Root, CrossCursor);
         return await pick.Task;
     }
 
@@ -295,8 +306,21 @@ public sealed partial class OverlayWindow : Window
         var point = e.GetCurrentPoint(Root);
         if (point.Properties.IsRightButtonPressed)
         {
-            Complete(null);
             e.Handled = true;
+            // 右键逐级取消：先关文字框、再丢当前笔迹，都不在才整张作废（与 Esc 同一套语义）。
+            if (_textInput != null)
+            {
+                CloseText(false);
+                return;
+            }
+
+            if (DiscardLiveStroke())
+            {
+                _rightDiscard = true;
+                return;
+            }
+
+            Complete(null);
             return;
         }
 
@@ -406,6 +430,11 @@ public sealed partial class OverlayWindow : Window
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
         var dip = e.GetCurrentPoint(Root).Position;
+        if (_locked && _resize < 0 && !_moving && !_dragging && !_pressing)
+        {
+            UpdateSelectionCursor(dip);
+        }
+
         if (_resize >= 0)
         {
             ResizeTo(dip);
@@ -418,7 +447,8 @@ public sealed partial class OverlayWindow : Window
             var dx = dip.X - _dragStart.X;
             var dy = dip.Y - _dragStart.Y;
             _dragStart = dip;
-            SetDipRect(_selX + dx, _selY + dy, _selW, _selH);
+            var snapped = SnapToScreen(_selX + dx, _selY + dy, _selW, _selH);
+            SetDipRect(snapped.X, snapped.Y, _selW, _selH);
             MoveLoupe(dip);
             return;
         }
@@ -488,6 +518,13 @@ public sealed partial class OverlayWindow : Window
     {
         if (e.GetCurrentPoint(Root).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonReleased)
         {
+            // 右键按下时若只是丢弃了当前笔迹（_rightDiscard），松开不能整张作废。
+            if (_rightDiscard)
+            {
+                _rightDiscard = false;
+                return;
+            }
+
             Complete(null);
             return;
         }
@@ -729,7 +766,40 @@ public sealed partial class OverlayWindow : Window
         if (_resize is 0 or 1 or 2) y = dip.Y;
         if (_resize is 2 or 4 or 7) r = dip.X;
         if (_resize is 5 or 6 or 7) b = dip.Y;
-        SetDipRect(Math.Min(x, r), Math.Min(y, b), Math.Abs(r - x), Math.Abs(b - y));
+        var snapped = SnapToScreen(Math.Min(x, r), Math.Min(y, b), Math.Abs(r - x), Math.Abs(b - y));
+        SetDipRect(snapped.X, snapped.Y, snapped.W, snapped.H);
+    }
+
+    /// <summary>屏幕边缘磁吸：拖拽/移动选区时四边距屏幕边 6dip 以内自动贴齐（键盘方向键微调不经过这里，保证 1px 精度）。</summary>
+    private (double X, double Y, double W, double H) SnapToScreen(double x, double y, double w, double h)
+    {
+        const double tolerance = 6;
+        var fullW = FullWidth();
+        var fullH = FullHeight();
+        if (Math.Abs(x) <= tolerance) x = 0;
+        if (Math.Abs(y) <= tolerance) y = 0;
+        if (Math.Abs(x + w - fullW) <= tolerance) x = fullW - w;
+        if (Math.Abs(y + h - fullH) <= tolerance) y = fullH - h;
+        return (x, y, w, h);
+    }
+
+    /// <summary>选区已锁定时的光标反馈：手柄显示对应方向的缩放箭头，选区内显示移动箭头，其余保持十字。</summary>
+    private void UpdateSelectionCursor(Point dip)
+    {
+        var handle = HitHandle(dip);
+        var cursor = handle switch
+        {
+            0 or 7 => SizeNwseCursor,
+            2 or 5 => SizeNeswCursor,
+            1 or 6 => SizeNsCursor,
+            3 or 4 => SizeEwCursor,
+            _ => InsideSelection(dip) && _tool == null ? SizeAllCursor : CrossCursor,
+        };
+        if (!ReferenceEquals(cursor, _currentCursor))
+        {
+            _currentCursor = cursor;
+            SetCursor(Root, cursor);
+        }
     }
 
     private int HitHandle(Point dip)
@@ -800,7 +870,15 @@ public sealed partial class OverlayWindow : Window
             labelY = y + 4;
         }
 
-        Place(SizeHost, x, labelY, double.NaN, double.NaN);
+        // 选区贴右边缘时角标会溢出屏幕，向左收回来（宽度取不到时先按左边缘放，下一帧修正）。
+        var labelX = x;
+        var labelW = SizeHost.ActualSize.X;
+        if (labelW > 0 && labelX + labelW > fullW - 8)
+        {
+            labelX = Math.Max(8, fullW - labelW - 8);
+        }
+
+        Place(SizeHost, labelX, labelY, double.NaN, double.NaN);
         PlaceHandles();
         // 预览与导出对齐：导出是「先把画面裁到选区、再画标注」，所以预览也把 Ink 画布裁到选区。
         // 这样长文本/贴边标注不会再「预览完整、导出半截」，而且移动/缩放选区时裁剪自动跟随。
@@ -833,22 +911,8 @@ public sealed partial class OverlayWindow : Window
 
     private void PlaceToolbar()
     {
-        // 三段式胶囊完整排布约 790dip；选区窄于该宽度时把智能工具组收纳为一个入口，
-        // 保证工具栏不会过分超出选区、也不会遮挡待标注内容。
-        var isCompact = _selW < CompactToolbarWidth;
-        if (isCompact)
-        {
-            if (SmartGroup.Visibility != Visibility.Collapsed) SmartGroup.Visibility = Visibility.Collapsed;
-            if (MoreToolsButton.Visibility != Visibility.Visible) MoreToolsButton.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            if (SmartGroup.Visibility != Visibility.Visible) SmartGroup.Visibility = Visibility.Visible;
-            if (MoreToolsButton.Visibility != Visibility.Collapsed) MoreToolsButton.Visibility = Visibility.Collapsed;
-        }
-
         Toolbar.UpdateLayout();
-        var mainW = MainBar.ActualWidth > 1 ? MainBar.ActualWidth : (isCompact ? 626 : 790);
+        var mainW = MainBar.ActualWidth > 1 ? MainBar.ActualWidth : 740;
         var mainH = MainBar.ActualHeight > 1 ? MainBar.ActualHeight : 38;
         var styleH = 0.0;
         var barW = mainW;
@@ -1052,6 +1116,22 @@ public sealed partial class OverlayWindow : Window
         SetHint(null);
     }
 
+    /// <summary>Esc 解锁选区回到「重新框选」状态；标注保留，重新框选并拖出新选区时才会被丢弃（见 DiscardAnnotations）。</summary>
+    private void UnlockSelection()
+    {
+        _locked = false;
+        _resize = -1;
+        _moving = false;
+        _dragging = false;
+        _currentCursor = CrossCursor;
+        SetCursor(Root, CrossCursor);
+        BarcodeCard.Visibility = Visibility.Collapsed;
+        _detectedBarcode = null;
+        _barcodeCts?.Cancel();
+        ClearSelection();
+        PaintTools();
+    }
+
     private double FullWidth() => Root.ActualWidth > 1 ? Root.ActualWidth : _monitor.Width / Scale;
 
     private double FullHeight() => Root.ActualHeight > 1 ? Root.ActualHeight : _monitor.Height / Scale;
@@ -1237,10 +1317,13 @@ public sealed partial class OverlayWindow : Window
 
     private bool IsDark => Root.ActualTheme != ElementTheme.Light;
 
-    /// <summary>显示首屏键帽提示；传入消息文本时改为显示单行状态消息。</summary>
+    /// <summary>显示首屏键帽提示；传入消息文本时改为显示单行状态消息。提示条会在数秒后自动淡出（见 StartHintTimer）。</summary>
     private void SetHint(string? message)
     {
         var hasMessage = !string.IsNullOrEmpty(message);
+        // 有新的提示要显示时作废尚未完成的淡出动画，并把透明度复位。
+        _hintFadeSeq++;
+        Hint.Opacity = 1;
         HintTips.Visibility = hasMessage ? Visibility.Collapsed : Visibility.Visible;
         HintMessage.Visibility = hasMessage ? Visibility.Visible : Visibility.Collapsed;
         if (hasMessage)
@@ -1249,6 +1332,54 @@ public sealed partial class OverlayWindow : Window
         }
 
         Hint.Visibility = Visibility.Visible;
+        StartHintTimer();
+    }
+
+    private DispatcherTimer? _hintTimer;
+
+    /// <summary>提示条数秒后自动淡出：截图是短时交互，常驻提示会一直压住画面上方的待截内容。</summary>
+    private void StartHintTimer()
+    {
+        if (_hintTimer == null)
+        {
+            _hintTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(6500) };
+            _hintTimer.Tick += (_, _) =>
+            {
+                _hintTimer.Stop();
+                if (_pick != null && !_locked && !_pressing && Hint.Visibility == Visibility.Visible)
+                {
+                    FadeOutHint();
+                }
+            };
+        }
+
+        _hintTimer.Stop();
+        _hintTimer.Start();
+    }
+
+    private void FadeOutHint()
+    {
+        var seq = ++_hintFadeSeq;
+        var fade = new DoubleAnimation
+        {
+            To = 0,
+            Duration = TimeSpan.FromMilliseconds(600),
+            EasingFunction = new ExponentialEase { Exponent = 3, EasingMode = EasingMode.EaseOut },
+        };
+        Storyboard.SetTarget(fade, Hint);
+        Storyboard.SetTargetProperty(fade, "Opacity");
+        var story = new Storyboard();
+        story.Children.Add(fade);
+        story.Completed += (_, _) =>
+        {
+            story.Stop();
+            // 期间若有新提示（SetHint 会推进 _hintFadeSeq 并把 Opacity 复位为 1），不要收起。
+            if (seq == _hintFadeSeq)
+            {
+                Hint.Visibility = Visibility.Collapsed;
+            }
+        };
+        story.Begin();
     }
 
     /// <summary>
@@ -1552,6 +1683,26 @@ public sealed partial class OverlayWindow : Window
         if (e.Key == VirtualKey.Escape)
         {
             e.Handled = true;
+            // Esc 逐级取消：丢当前笔迹 → 取消选中工具 → 解锁选区重新框选 → 退出截图。
+            // 旧实现一级 Esc 直接整张作废，画了半天的标注全部丢失。
+            if (DiscardLiveStroke())
+            {
+                return;
+            }
+
+            if (_tool != null)
+            {
+                _tool = null;
+                PaintTools();
+                return;
+            }
+
+            if (_locked)
+            {
+                UnlockSelection();
+                return;
+            }
+
             Complete(null);
         }
         else if ((e.Key == VirtualKey.Y || (e.Key == VirtualKey.Z && (NativeMethods.GetKeyState(0x10) & 0x8000) != 0)) && (NativeMethods.GetKeyState(0x11) & 0x8000) != 0)

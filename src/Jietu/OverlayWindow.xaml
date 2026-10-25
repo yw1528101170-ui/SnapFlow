@@ -436,14 +436,14 @@
             <!-- 核心三段式自适应悬浮工具栏 -->
             <StackPanel x:Name="Toolbar" Orientation="Vertical" Visibility="Collapsed">
                 <Border x:Name="MainBar" HorizontalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" Spacing="7">
-                        <!-- 第一段：基础标注工具 -->
-                        <Grid>
-                            <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,8,0,-8"/>
-                            <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
-                            <Border Style="{StaticResource OverlayCapsule}">
-                                <Grid>
-                                    <Border Style="{StaticResource GlassHighlight}"/>
+                    <Grid>
+                        <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,8,0,-8"/>
+                        <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
+                        <Border Style="{StaticResource OverlayCapsule}" Padding="7,3">
+                            <Grid>
+                                <Border Style="{StaticResource GlassHighlight}" Margin="12,0,12,0"/>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <!-- 第一段：基础标注工具 -->
                                     <StackPanel Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
                                         <ToggleButton x:Name="RectButton" Style="{StaticResource OverlayTool}" Click="OnRect" ToolTipService.ToolTip="矩形  R">
                                             <Path Style="{StaticResource ToolGlyph}" Data="M 4,2.5 H 14 A 2,2 0 0 1 16,4.5 V 13.5 A 2,2 0 0 1 14,15.5 H 4 A 2,2 0 0 1 2,13.5 V 4.5 A 2,2 0 0 1 4,2.5 Z"/>
@@ -475,82 +475,48 @@
                                         <!-- 隐藏的序号按钮，保留兼容性 -->
                                         <ToggleButton x:Name="NumberButton" Visibility="Collapsed" Style="{StaticResource OverlayTool}" Click="OnNumber"/>
                                     </StackPanel>
-                                </Grid>
-                            </Border>
-                        </Grid>
 
-                        <!-- 第二段：智能与扩展工具 -->
-                        <Grid>
-                            <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,8,0,-8"/>
-                            <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
-                            <Border Style="{StaticResource OverlayCapsule}">
-                                <Grid>
-                                    <Border Style="{StaticResource GlassHighlight}"/>
-                                    <StackPanel Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
-                                        <StackPanel x:Name="SmartGroup" Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
-                                            <Button x:Name="TranslateButton" Style="{StaticResource OverlayAction}" Click="OnTranslate" ToolTipService.ToolTip="翻译选中区域">
-                                                <Path Style="{StaticResource ToolGlyph}" Data="M 8.5,2.5 H 14.5 A 1.5,1.5 0 0 1 16,4 V 9.5 A 1.5,1.5 0 0 1 14.5,11 H 12 M 10.5,9.5 L 12.5,5 L 14.5,9.5 M 11.2,8.2 H 13.8 M 3.5,6 H 9.5 A 1.5,1.5 0 0 1 11,7.5 V 13.5 A 1.5,1.5 0 0 1 9.5,15 H 3.5 A 1.5,1.5 0 0 1 2,13.5 V 7.5 A 1.5,1.5 0 0 1 3.5,6 Z M 4,8.5 H 9 M 6.5,7.2 V 8.5 M 4.8,10.2 L 8.2,13.8 M 8.2,10.2 L 4.8,13.8"/>
-                                            </Button>
-                                            <Button x:Name="ExtractTextButton" Style="{StaticResource OverlayAction}" Click="OnExtractText" ToolTipService.ToolTip="提取文字 (OCR)">
-                                                <Path Style="{StaticResource ToolGlyph}" Data="M 2.5,6.5 V 4 A 1.5,1.5 0 0 1 4,2.5 H 6.5 M 11.5,2.5 H 14 A 1.5,1.5 0 0 1 15.5,4 V 6.5 M 2.5,11.5 V 14 A 1.5,1.5 0 0 1 4,15.5 H 6.5 M 11.5,15.5 H 14 A 1.5,1.5 0 0 1 15.5,14 V 11.5 M 5.5,7.5 H 12.5 M 9,6 V 7.5 M 6.5,9.2 L 11.5,14 M 11.5,9.2 L 6.5,14"/>
-                                            </Button>
-                                            <Button x:Name="ExtractCodeButton" Style="{StaticResource OverlayAction}" Click="OnExtractCode" ToolTipService.ToolTip="提取代码（自动识别语法并导出 Markdown）">
-                                                <Path Style="{StaticResource ToolGlyph}" Data="M 6.5,5.5 L 3.5,9 L 6.5,12.5 M 11.5,5.5 L 14.5,9 L 11.5,12.5 M 10,4 L 8,14"/>
-                                            </Button>
-                                            <Button x:Name="SmartRedactButton" Style="{StaticResource OverlayAction}" Click="OnSmartRedact" ToolTipService.ToolTip="智能隐私脱敏（手机号 / 身份证 / 邮箱 / IP / 密钥）">
-                                                <Path Style="{StaticResource ToolGlyph}" Data="M 9,2.5 L 14.5,4.8 V 9.5 C 14.5,12.8 11.8,15.3 9,16 C 6.2,15.3 3.5,12.8 3.5,9.5 V 4.8 Z M 7.5,9.2 L 8.8,10.5 L 11.5,7.8"/>
-                                            </Button>
-                                            <Button x:Name="AiVisionButton" Style="{StaticResource OverlayAction}" Click="OnAiVision" ToolTipService.ToolTip="AI 视觉分析（多模态大模型解析与问答）">
-                                                <Path Style="{StaticResource ToolGlyph}" Data="M 9,2 L 10.2,6.8 L 15,8 L 10.2,9.2 L 9,14 L 7.8,9.2 L 3,8 L 7.8,6.8 Z M 13.8,11.8 L 14.3,13.2 L 15.8,13.8 L 14.3,14.3 L 13.8,15.8 L 13.2,14.3 L 11.8,13.8 L 13.2,13.2 Z"/>
-                                            </Button>
-                                            <Button x:Name="LongButton" Style="{StaticResource OverlayAction}" Click="OnLong" ToolTipService.ToolTip="滚动长截图">
-                                                <Path Style="{StaticResource ToolGlyph}" Data="M 4,6.5 V 4 A 1.5,1.5 0 0 1 5.5,2.5 H 12.5 A 1.5,1.5 0 0 1 14,4 V 6.5 M 4,8.5 V 9.5 M 14,8.5 V 9.5 M 4,11.5 V 14 A 1.5,1.5 0 0 0 5.5,15.5 H 12.5 A 1.5,1.5 0 0 0 14,14 V 11.5 M 9,5.5 V 12.5 M 6.8,7.5 L 9,5.2 L 11.2,7.5 M 6.8,10.5 L 9,12.8 L 11.2,10.5"/>
-                                            </Button>
-                                        </StackPanel>
-                                        <!-- 紧凑模式下的智能工具聚合入口 -->
-                                        <Button x:Name="MoreToolsButton" Style="{StaticResource OverlayAction}" Visibility="Collapsed" ToolTipService.ToolTip="更多智能工具">
+                                    <Border Style="{StaticResource ToolGroupSplit}"/>
+
+                                    <!-- 第二段：智能工具（高频直出，其余收进「更多」） -->
+                                    <StackPanel x:Name="SmartGroup" Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
+                                        <Button x:Name="ExtractTextButton" Style="{StaticResource OverlayAction}" Click="OnExtractText" ToolTipService.ToolTip="提取文字 (OCR)">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 2.5,6.5 V 4 A 1.5,1.5 0 0 1 4,2.5 H 6.5 M 11.5,2.5 H 14 A 1.5,1.5 0 0 1 15.5,4 V 6.5 M 2.5,11.5 V 14 A 1.5,1.5 0 0 1 4,15.5 H 6.5 M 11.5,15.5 H 14 A 1.5,1.5 0 0 1 15.5,14 V 11.5 M 5.5,7.5 H 12.5 M 9,6 V 7.5 M 6.5,9.2 L 11.5,14 M 11.5,9.2 L 6.5,14"/>
+                                        </Button>
+                                        <Button x:Name="AiVisionButton" Style="{StaticResource OverlayAction}" Click="OnAiVision" ToolTipService.ToolTip="AI 视觉分析（多模态大模型解析与问答）">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 9,2 L 10.2,6.8 L 15,8 L 10.2,9.2 L 9,14 L 7.8,9.2 L 3,8 L 7.8,6.8 Z M 13.8,11.8 L 14.3,13.2 L 15.8,13.8 L 14.3,14.3 L 13.8,15.8 L 13.2,14.3 L 11.8,13.8 L 13.2,13.2 Z"/>
+                                        </Button>
+                                        <Button x:Name="MoreToolsButton" Style="{StaticResource OverlayAction}" ToolTipService.ToolTip="更多智能工具">
                                             <Path Style="{StaticResource ToolGlyph}" Data="M 4,9 A 1.2,1.2 0 1 1 3.99,9 Z M 9,9 A 1.2,1.2 0 1 1 8.99,9 Z M 14,9 A 1.2,1.2 0 1 1 13.99,9 Z"/>
                                             <Button.Flyout>
                                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
-                                                    <MenuFlyoutItem Text="长截图" Click="OnLong">
-                                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7EE;"/></MenuFlyoutItem.Icon>
-                                                    </MenuFlyoutItem>
-                                                    <MenuFlyoutItem Text="提取文字 (OCR)" Click="OnExtractText">
-                                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C1;"/></MenuFlyoutItem.Icon>
-                                                    </MenuFlyoutItem>
                                                     <MenuFlyoutItem Text="提取代码 (Markdown)" Click="OnExtractCode">
                                                         <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE943;"/></MenuFlyoutItem.Icon>
                                                     </MenuFlyoutItem>
                                                     <MenuFlyoutItem Text="智能隐私脱敏" Click="OnSmartRedact">
                                                         <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72E;"/></MenuFlyoutItem.Icon>
                                                     </MenuFlyoutItem>
-                                                    <MenuFlyoutItem Text="AI 视觉分析" Click="OnAiVision">
-                                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE946;"/></MenuFlyoutItem.Icon>
-                                                    </MenuFlyoutItem>
                                                     <MenuFlyoutItem Text="翻译" Click="OnTranslate">
                                                         <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE774;"/></MenuFlyoutItem.Icon>
+                                                    </MenuFlyoutItem>
+                                                    <MenuFlyoutItem Text="滚动长截图" Click="OnLong">
+                                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE7EE;"/></MenuFlyoutItem.Icon>
                                                     </MenuFlyoutItem>
                                                 </MenuFlyout>
                                             </Button.Flyout>
                                         </Button>
                                     </StackPanel>
-                                </Grid>
-                            </Border>
-                        </Grid>
 
-                        <!-- 第三段：编辑与导出操作 -->
-                        <Grid>
-                            <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,8,0,-8"/>
-                            <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
-                            <Border Style="{StaticResource OverlayCapsule}">
-                                <Grid>
-                                    <Border Style="{StaticResource GlassHighlight}"/>
+                                    <Border Style="{StaticResource ToolGroupSplit}"/>
+
+                                    <!-- 第三段：编辑与导出操作 -->
                                     <StackPanel Orientation="Horizontal" Spacing="1" VerticalAlignment="Center">
                                         <Button x:Name="UndoButton" Style="{StaticResource OverlayAction}" Click="OnUndo" ToolTipService.ToolTip="撤销  Ctrl+Z">
                                             <Path Style="{StaticResource ToolGlyph}" Data="M 9.5,4 L 6.5,6.8 L 9.5,9.6 M 7.5,6.8 H 11 A 3.8,3.8 0 0 1 14.8,10.6 A 3.8,3.8 0 0 1 11,14.4 H 5"/>
                                         </Button>
-                                        <!-- 隐藏的重做按钮，保留快捷键兼容性 -->
-                                        <Button x:Name="RedoButton" Visibility="Collapsed" Style="{StaticResource OverlayAction}" Click="OnRedo"/>
+                                        <Button x:Name="RedoButton" Style="{StaticResource OverlayAction}" Click="OnRedo" ToolTipService.ToolTip="重做  Ctrl+Shift+Z">
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 8.5,4 L 11.5,6.8 L 8.5,9.6 M 10.5,6.8 H 7 A 3.8,3.8 0 0 0 3.2,10.6 A 3.8,3.8 0 0 0 7,14.4 H 13"/>
+                                        </Button>
 
                                         <Border Style="{StaticResource ToolGroupSplit}"/>
 
@@ -558,28 +524,28 @@
                                             <Path Style="{StaticResource ToolGlyph}" Data="M 3.5,8.5 V 13.5 A 1.5,1.5 0 0 0 5,15 H 13 A 1.5,1.5 0 0 0 14.5,13.5 V 8.5 M 9,3 V 11.5 M 5.8,8.2 L 9,11.5 L 12.2,8.2"/>
                                         </Button>
                                         <Button x:Name="PinButton" Style="{StaticResource OverlayAction}" Click="OnPin" ToolTipService.ToolTip="钉在桌面置顶">
-                                            <Path Style="{StaticResource ToolGlyph}" Data="M 7,3.5 H 11 M 8,3.5 L 8.2,5.5 L 4.8,11.5 H 13.2 L 9.8,5.5 L 10,3.5 M 9,11.5 V 16"/>
+                                            <FontIcon Glyph="&#xE718;" FontSize="15" Foreground="{ThemeResource OverlayGlyphBrush}"/>
                                         </Button>
                                         <Button x:Name="ShareButton" Style="{StaticResource OverlayAction}" Click="OnShare" ToolTipService.ToolTip="发送 / 分享">
                                             <Path Style="{StaticResource ToolGlyph}" Data="M 4.5,14 C 4.5,9.5 8,6.5 13,6.5 M 9.5,3 L 14,6.5 L 9.5,10"/>
                                         </Button>
                                         <Button x:Name="CancelButton" Style="{StaticResource OverlayAction}" Click="OnCancel" ToolTipService.ToolTip="取消  Esc">
-                                            <Path Style="{StaticResource ToolGlyph}" Tag="fixed" Stroke="{ThemeResource OverlayDangerBrush}" StrokeThickness="1.7" Data="M 4.5,4.5 L 13.5,13.5 M 13.5,4.5 L 4.5,13.5"/>
+                                            <Path Style="{StaticResource ToolGlyph}" Data="M 4.5,4.5 L 13.5,13.5 M 13.5,4.5 L 4.5,13.5"/>
                                         </Button>
 
                                         <Border Style="{StaticResource ToolGroupSplit}"/>
 
-                                        <Button x:Name="ConfirmButton" Style="{StaticResource OverlayPrimary}" Click="OnConfirm" ToolTipService.ToolTip="完成并复制  Enter">
+                                        <Button x:Name="ConfirmButton" Style="{StaticResource OverlayPrimary}" MinWidth="64" Click="OnConfirm" ToolTipService.ToolTip="完成并复制  Enter">
                                             <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                                                 <Path Style="{StaticResource ToolGlyph}" Tag="fixed" Width="12" Height="12" Stroke="White" StrokeThickness="2.1" Data="M 3.8,9.2 L 7.5,13.2 L 14.5,4.8"/>
                                                 <TextBlock Text="完成" Foreground="White" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>
-                                </Grid>
-                            </Border>
-                        </Grid>
-                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </Border>
 
                 <!-- 二级标注参数微调条 -->
