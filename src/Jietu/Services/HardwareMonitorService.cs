@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -32,6 +31,19 @@ public sealed class HardwareMonitorService : IDisposable
     private readonly FrameRateMeter _frameRate = new();
     private readonly DxgiPdhGpuAdapter _dxgiPdh = new();
     private float _cpuBaseFreqGhz;
+    private float _lastValidGhz;
+
+    // 服务级 PDH 查询：CPU 实时频率与网卡速率共用，一次 Collect 同时刷新两组计数器。
+    private PdhQuery? _servicePdh;
+    private IntPtr _cpuPerfCounter;
+    private IntPtr _netRecvCounter;
+    private IntPtr _netSentCounter;
+    private readonly PdhArrayBuffer _netRecvBuffer = new();
+    private readonly PdhArrayBuffer _netSentBuffer = new();
+    private readonly List<(string Instance, double Value)> _netRecvItems = new();
+    private readonly List<(string Instance, double Value)> _netSentItems = new();
+    private readonly List<(string Name, double TotalBytesPerSec)> _netRates = new();
+    private string? _netActiveAdapter;
 
     // CPU 计算差值缓存
     private long _prevCpuIdle;
@@ -39,7 +51,7 @@ public sealed class HardwareMonitorService : IDisposable
     private long _prevCpuUser;
     private bool _hasCpuSnapshot;
 
-    // 网络计算差值缓存
+    // 网络计算差值缓存（PDH 不可用时的 .NET IPv4 兜底）
     private long _prevBytesRecv;
     private long _prevBytesSent;
     private DateTime _prevNetTime = DateTime.MinValue;
@@ -74,9 +86,27 @@ public sealed class HardwareMonitorService : IDisposable
             _dxgiPdh.Initialize();
         }
 
+        InitializeServicePdh();
+
         // 首次预采快照
         SnapshotCpu();
         SnapshotNet();
+    }
+
+    private void InitializeServicePdh()
+    {
+        var query = PdhQuery.TryOpen();
+        if (query == null)
+        {
+            return;
+        }
+
+        _cpuPerfCounter = query.AddCounter(@"\Processor Information(_Total)\% Processor Performance");
+        _netRecvCounter = query.AddCounter(@"\Network Interface(*)\Bytes Received/sec");
+        _netSentCounter = query.AddCounter(@"\Network Interface(*)\Bytes Sent/sec");
+        // 速率计数器需要两个原始样本才有格式化值，先埋第一个，100ms 后的首个 tick 补第二个
+        query.Collect();
+        _servicePdh = query;
     }
 
     /// <summary>
@@ -99,6 +129,7 @@ public sealed class HardwareMonitorService : IDisposable
                 // 重新启用时重置差值基线，避免把停机期间的时间算进使用率。
                 SnapshotCpu();
                 SnapshotNet();
+                _servicePdh?.Collect();
                 _timer.Change(100, _intervalMs);
             }
             else
@@ -124,8 +155,12 @@ public sealed class HardwareMonitorService : IDisposable
 
     public HardwareMetrics Sample()
     {
+        // 一次 Collect 同时刷新 CPU 频率与网卡速率计数器
+        _servicePdh?.Collect();
+
         // 1. CPU
         float cpuUsage = SampleCpuUsage();
+        float cpuGhz = SampleCpuFrequency();
 
         // 2. RAM
         var (ramUsage, ramUsed, ramTotal) = SampleRam();
@@ -133,21 +168,21 @@ public sealed class HardwareMonitorService : IDisposable
         // 3. 网络
         var (downSpeed, upSpeed) = SampleNetSpeed();
 
-// 4. GPU (优先 NVML；若不可用则一次性切换到 DXGI+PDH，之后不再反复判断)
-// NVML 与 DXGI+PDH 都不可用时给显式的「不可用」快照：温度 -1 表示无数据，名称不能为 null。
-var gpu = _useNvml
-    ? _nvml.Sample()
-    : new NvmlAdapter.GpuSnapshot(0f, -1f, 0UL, 0UL, "GPU");
-if (!_useNvml && _dxgiPdh.IsAvailable)
-{
-    var fallback = _dxgiPdh.Sample();
-    gpu = new NvmlAdapter.GpuSnapshot(
-        fallback.UsagePercent,
-        -1f,
-        fallback.MemoryUsedBytes,
-        fallback.MemoryTotalBytes,
-        fallback.Name);
-}
+        // 4. GPU (优先 NVML；若不可用则一次性切换到 DXGI+PDH，之后不再反复判断)
+        // NVML 与 DXGI+PDH 都不可用时给显式的「不可用」快照：温度 -1 表示无数据，名称不能为 null。
+        var gpu = _useNvml
+            ? _nvml.Sample()
+            : new NvmlAdapter.GpuSnapshot(0f, -1f, 0UL, 0UL, "GPU");
+        if (!_useNvml && _dxgiPdh.IsAvailable)
+        {
+            var fallback = _dxgiPdh.Sample();
+            gpu = new NvmlAdapter.GpuSnapshot(
+                fallback.UsagePercent,
+                -1f,
+                fallback.MemoryUsedBytes,
+                fallback.MemoryTotalBytes,
+                fallback.Name);
+        }
 
         float frameRate = _frameRate.Sample();
 
@@ -158,7 +193,7 @@ if (!_useNvml && _dxgiPdh.IsAvailable)
             GpuMemoryTotalBytes: gpu.MemoryTotalBytes,
             GpuName: gpu.Name,
             CpuUsagePercent: cpuUsage,
-            CpuFrequencyGhz: _cpuBaseFreqGhz,
+            CpuFrequencyGhz: cpuGhz,
             RamUsagePercent: ramUsage,
             RamUsedBytes: ramUsed,
             RamTotalBytes: ramTotal,
@@ -216,6 +251,27 @@ if (!_useNvml && _dxgiPdh.IsAvailable)
         return Math.Clamp(usage, 0f, 100f);
     }
 
+    /// <summary>
+    /// 实时频率 = 基频 × % Processor Performance（任务管理器"速度"的同款口径，
+    /// 大于基频即睿频）。读不到时返回 0，显示端会隐藏频率而不是编造数值。
+    /// </summary>
+    private float SampleCpuFrequency()
+    {
+        if (_cpuBaseFreqGhz <= 0f || _cpuPerfCounter == IntPtr.Zero)
+        {
+            return 0f;
+        }
+
+        if (PdhInterop.TryReadSingle(_cpuPerfCounter, out var pct) && pct > 0)
+        {
+            _lastValidGhz = HardwareMonitorLogic.ComputeGhz(_cpuBaseFreqGhz, pct);
+        }
+
+        // 计数器偶发无数据（两次 Collect 间隔太近）时沿用上一有效值，避免副值闪空
+        return _lastValidGhz;
+    }
+
+    /// <summary>注册表 ~MHz 是 BIOS 上报的基频（本机 i5-12490F 为 2995MHz）；读不到返回 0，UI 隐藏频率。</summary>
     private static float QueryCpuBaseFrequency()
     {
         try
@@ -234,7 +290,7 @@ if (!_useNvml && _dxgiPdh.IsAvailable)
         {
             // 忽略注册表异常
         }
-        return 3.60f; // 默认备选值
+        return 0f;
     }
 
     #endregion
@@ -280,6 +336,78 @@ if (!_useNvml && _dxgiPdh.IsAvailable)
     #endregion
 
     #region 网络采样
+
+    /// <summary>
+    /// PDH Network Interface 计数器（IPv4+IPv6 全统计，任务管理器网卡页同源）。
+    /// 只展示吞吐最大的一张网卡：VPN TUN / Hyper-V 虚拟网桥会让同一份流量计两次，求和会虚高一倍。
+    /// </summary>
+    private (long downSpeed, long upSpeed) SampleNetSpeed()
+    {
+        if (_netRecvCounter != IntPtr.Zero && _netSentCounter != IntPtr.Zero &&
+            _netRecvBuffer.Read(_netRecvCounter, _netRecvItems) &&
+            _netSentBuffer.Read(_netSentCounter, _netSentItems))
+        {
+            _netRates.Clear();
+            foreach (var (name, recv) in _netRecvItems)
+            {
+                if (IsTunnelOrLoopbackNetInstance(name))
+                {
+                    continue;
+                }
+
+                var sent = 0.0;
+                foreach (var (sentName, sentValue) in _netSentItems)
+                {
+                    if (string.Equals(sentName, name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        sent = sentValue;
+                        break;
+                    }
+                }
+
+                _netRates.Add((name, recv + sent));
+            }
+
+            var chosen = HardwareMonitorLogic.SelectNetAdapter(_netRates, _netActiveAdapter);
+            if (chosen == null)
+            {
+                return (0, 0);
+            }
+
+            _netActiveAdapter = chosen;
+            foreach (var (name, recv) in _netRecvItems)
+            {
+                if (!string.Equals(name, chosen, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                long down = (long)Math.Max(0, recv);
+                long up = 0;
+                foreach (var (sentName, sentValue) in _netSentItems)
+                {
+                    if (string.Equals(sentName, chosen, StringComparison.OrdinalIgnoreCase))
+                    {
+                        up = (long)Math.Max(0, sentValue);
+                        break;
+                    }
+                }
+
+                return (down, up);
+            }
+
+            return (0, 0);
+        }
+
+        return SampleNetSpeedFallback();
+    }
+
+    /// <summary>排除回环与隧道伪网卡：流量要么是主机内部通信，要么已在物理网卡上计过一次。</summary>
+    private static bool IsTunnelOrLoopbackNetInstance(string name)
+        => name.Contains("loopback", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("isatap", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("teredo", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("6to4", StringComparison.OrdinalIgnoreCase);
 
     private void SnapshotNet()
     {
@@ -337,7 +465,8 @@ if (!_useNvml && _dxgiPdh.IsAvailable)
         return (recv, sent);
     }
 
-    private (long downSpeed, long upSpeed) SampleNetSpeed()
+    /// <summary>.NET 差值兜底（仅 PDH 打不开时使用；只有 IPv4 计数）。</summary>
+    private (long downSpeed, long upSpeed) SampleNetSpeedFallback()
     {
         try
         {
@@ -376,6 +505,9 @@ if (!_useNvml && _dxgiPdh.IsAvailable)
         _timer.Dispose();
         _nvml.Dispose();
         _dxgiPdh.Dispose();
+        _servicePdh?.Dispose();
+        _netRecvBuffer.Dispose();
+        _netSentBuffer.Dispose();
     }
 }
 
@@ -541,7 +673,13 @@ internal sealed class NvmlAdapter : IDisposable
 }
 
 /// <summary>
-/// 全品牌显卡通用监视适配器 (基于 Windows 原生 DXGI 1.1+ 与 PDH 性能计数器，支持 AMD Radeon、Intel Arc/Iris/iGPU 及 NVIDIA)
+/// 全品牌显卡通用监视适配器（DXGI 1.1 选卡 + PDH GPU 计数器取数，支持 AMD / Intel / NVIDIA）。
+/// 口径与任务管理器对齐：
+/// - 利用率 = 目标适配器内按引擎类型（3D/Copy/VideoDecode/…）求和、跨类型取最大；
+///   引擎实例按适配器 LUID 过滤，核显+独显双卡各算各的，绝不相加。
+/// - 显存 = 目标适配器的 Dedicated Usage；核显（UMA 无专有显存）回退计入 Shared Usage。
+/// - 双显卡默认显示显存最大的独显，另一张卡平滑利用率持续高出 3 个百分点才切换
+///   （Optimus 轻薄本日常负载全在核显的场景跟着真实负载走）。
 /// </summary>
 internal sealed class DxgiPdhGpuAdapter : IDisposable
 {
@@ -582,51 +720,30 @@ internal sealed class DxgiPdhGpuAdapter : IDisposable
 
     private static readonly Guid IID_IDXGIFactory1 = new("770aae78-f26f-4dba-a829-253c83d1b387");
 
-    [DllImport("pdh.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern int PdhOpenQuery(IntPtr szDataSource, IntPtr dwUserData, out IntPtr phQuery);
+    /// <summary>UMA 判定阈值：专有显存低于它的适配器（核显/虚拟卡）显存占用计入 Shared Usage。</summary>
+    private const ulong MinDedicatedVramBytes = 64UL * 1024 * 1024;
 
-    [DllImport("pdh.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern int PdhAddEnglishCounterW(IntPtr hQuery, string szFullCounterPath, IntPtr dwUserData, out IntPtr phCounter);
+    private const float UsageSmoothFactor = 0.35f;
 
-    [DllImport("pdh.dll", SetLastError = true)]
-    private static extern int PdhCollectQueryData(IntPtr hQuery);
+    private sealed record GpuAdapterInfo(ulong Luid, string Name, ulong DedicatedVram);
 
-    [DllImport("pdh.dll", SetLastError = true)]
-    private static extern int PdhCloseQuery(IntPtr hQuery);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PDH_FMT_COUNTERVALUE
-    {
-        public uint CStatus;
-        public double doubleValue;
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct PDH_FMT_COUNTERVALUE_ITEM
-    {
-        public IntPtr szName;
-        public PDH_FMT_COUNTERVALUE FmtValue;
-    }
-
-    [DllImport("pdh.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern int PdhGetFormattedCounterArrayW(
-        IntPtr hCounter,
-        uint dwFormat,
-        ref uint lpdwBufferSize,
-        ref uint lpdwItemCount,
-        IntPtr pItemBuffer);
-
+    private readonly List<GpuAdapterInfo> _adapters = new();
+    private ulong _primaryLuid;
     private string _gpuName = "GPU";
     private ulong _totalVram;
-    private IntPtr _pdhQuery = IntPtr.Zero;
-    private IntPtr _pdhEngineCounter = IntPtr.Zero;
-    private IntPtr _pdhMemCounter = IntPtr.Zero;
+    private PdhQuery? _pdhQuery;
+    private IntPtr _engineCounter;
+    private IntPtr _dedCounter;
+    private IntPtr _sharedCounter;
+    private readonly PdhArrayBuffer _engineBuffer = new();
+    private readonly PdhArrayBuffer _dedBuffer = new();
+    private readonly PdhArrayBuffer _sharedBuffer = new();
+    private readonly List<(string Instance, double Value)> _engineItems = new();
+    private readonly List<(string Instance, double Value)> _dedItems = new();
+    private readonly List<(string Instance, double Value)> _sharedItems = new();
+    private readonly Dictionary<ulong, float> _usageEwma = new();
     private bool _initialized;
     private readonly object _lock = new();
-
-    // PDH 每次读取都要申请一块返回缓冲区，复用同一块内存可避免每秒的堆分配。
-    private IntPtr _pdhBuffer = IntPtr.Zero;
-    private uint _pdhBufferSize;
 
     public bool IsAvailable => _initialized;
     public string GpuName => _gpuName;
@@ -642,7 +759,7 @@ internal sealed class DxgiPdhGpuAdapter : IDisposable
                 ProbeDxgiAdapter();
                 InitPdh();
                 _initialized = true;
-                Log.Info($"DXGI+PDH GPU monitor initialized: {_gpuName} (VRAM: {_totalVram / (1024 * 1024)}MB)");
+                Log.Info($"DXGI+PDH GPU monitor initialized: {_gpuName} (VRAM: {_totalVram / (1024 * 1024)}MB, adapters: {_adapters.Count})");
             }
             catch (Exception ex)
             {
@@ -661,9 +778,6 @@ internal sealed class DxgiPdhGpuAdapter : IDisposable
             IntPtr factoryVtbl = Marshal.ReadIntPtr(factory);
             var enumAdapters1 = Marshal.GetDelegateForFunctionPointer<EnumAdapters1Delegate>(Marshal.ReadIntPtr(factoryVtbl, 12 * IntPtr.Size));
 
-            ulong maxVram = 0;
-            string bestName = "GPU";
-
             for (uint i = 0; ; i++)
             {
                 if (enumAdapters1(factory, i, out var adapter) != 0 || adapter == IntPtr.Zero) break;
@@ -674,12 +788,9 @@ internal sealed class DxgiPdhGpuAdapter : IDisposable
                     var getDesc1 = Marshal.GetDelegateForFunctionPointer<GetDesc1Delegate>(Marshal.ReadIntPtr(adapterVtbl, 10 * IntPtr.Size));
                     if (getDesc1(adapter, out var desc) == 0 && (desc.Flags & 2) == 0) // 排除软件渲染器
                     {
-                        ulong vram = (ulong)desc.DedicatedVideoMemory;
-                        if (vram > maxVram || (maxVram == 0 && bestName == "GPU"))
-                        {
-                            maxVram = vram;
-                            bestName = string.IsNullOrWhiteSpace(desc.Description) ? "GPU" : desc.Description.Trim();
-                        }
+                        var luid = unchecked((ulong)desc.AdapterLuid);
+                        var name = string.IsNullOrWhiteSpace(desc.Description) ? "GPU" : desc.Description.Trim();
+                        _adapters.Add(new GpuAdapterInfo(luid, name, (ulong)desc.DedicatedVideoMemory));
                     }
                 }
                 finally
@@ -690,8 +801,22 @@ internal sealed class DxgiPdhGpuAdapter : IDisposable
                 }
             }
 
-            _gpuName = bestName;
-            _totalVram = maxVram;
+            // 主适配器 = 专有显存最大者（首个并列最大）；全部无专有显存时取第一张，至少保住名称。
+            var primary = _adapters.Count == 0 ? null : _adapters[0];
+            foreach (var adapter in _adapters)
+            {
+                if (primary == null || adapter.DedicatedVram > primary.DedicatedVram)
+                {
+                    primary = adapter;
+                }
+            }
+
+            if (primary != null)
+            {
+                _primaryLuid = primary.Luid;
+                _gpuName = primary.Name;
+                _totalVram = primary.DedicatedVram;
+            }
         }
         finally
         {
@@ -705,12 +830,17 @@ internal sealed class DxgiPdhGpuAdapter : IDisposable
     {
         try
         {
-            if (PdhOpenQuery(IntPtr.Zero, IntPtr.Zero, out _pdhQuery) == 0 && _pdhQuery != IntPtr.Zero)
+            var query = PdhQuery.TryOpen();
+            if (query == null)
             {
-                PdhAddEnglishCounterW(_pdhQuery, @"\GPU Engine(*engtype_3D)\Utilization Percentage", IntPtr.Zero, out _pdhEngineCounter);
-                PdhAddEnglishCounterW(_pdhQuery, @"\GPU Adapter Memory(*)\Dedicated Usage", IntPtr.Zero, out _pdhMemCounter);
-                PdhCollectQueryData(_pdhQuery);
+                return;
             }
+
+            _pdhQuery = query;
+            _engineCounter = query.AddCounter(@"\GPU Engine(*)\Utilization Percentage");
+            _dedCounter = query.AddCounter(@"\GPU Adapter Memory(*)\Dedicated Usage");
+            _sharedCounter = query.AddCounter(@"\GPU Adapter Memory(*)\Shared Usage");
+            query.Collect();
         }
         catch
         {
@@ -722,124 +852,84 @@ internal sealed class DxgiPdhGpuAdapter : IDisposable
     {
         lock (_lock)
         {
-            if (!_initialized)
+            if (!_initialized || _adapters.Count == 0)
+            {
+                return new GpuSnapshot(0f, -1f, 0UL, 0UL, _gpuName);
+            }
+
+            if (_pdhQuery?.Collect() != true)
             {
                 return new GpuSnapshot(0f, -1f, 0UL, _totalVram, _gpuName);
             }
 
-            float utilPercent = 0f;
-            ulong usedMemBytes = 0;
-
-            if (_pdhQuery != IntPtr.Zero)
+            Dictionary<ulong, float>? usageByLuid = null;
+            if (_engineBuffer.Read(_engineCounter, _engineItems))
             {
-                try
-                {
-                    if (PdhCollectQueryData(_pdhQuery) == 0)
-                    {
-                        if (_pdhEngineCounter != IntPtr.Zero)
-                        {
-                            utilPercent = SampleEngineUsage(_pdhEngineCounter);
-                        }
-
-                        if (_pdhMemCounter != IntPtr.Zero)
-                        {
-                            usedMemBytes = SampleDedicatedMemory(_pdhMemCounter);
-                        }
-                    }
-                }
-                catch
-                {
-                    // 计数器读取异常容错
-                }
+                usageByLuid = HardwareMonitorLogic.GpuUsageByAdapter(_engineItems);
             }
 
-            return new GpuSnapshot(utilPercent, -1f, usedMemBytes, _totalVram, _gpuName);
+            UpdateUsageEwma(usageByLuid);
+            // 显示值用原始瞬时利用率（UI 层已有指数平滑），EWMA 只用于选卡的防抖
+            var chosenLuid = HardwareMonitorLogic.SelectGpuAdapter(_primaryLuid, _usageEwma);
+            var chosen = AdapterByLuid(chosenLuid) ?? AdapterByLuid(_primaryLuid);
+            if (chosen == null)
+            {
+                return new GpuSnapshot(0f, -1f, 0UL, _totalVram, _gpuName);
+            }
+
+            var usage = usageByLuid?.GetValueOrDefault(chosen.Luid, 0f) ?? 0f;
+
+            double usedBytes = 0;
+            if (_dedBuffer.Read(_dedCounter, _dedItems))
+            {
+                usedBytes += HardwareMonitorLogic.GpuMemoryForAdapter(_dedItems, chosen.Luid);
+            }
+
+            // 核显（UMA）：没有专有显存，Shared Usage（系统内存划拨）才是真实占用
+            if (chosen.DedicatedVram < MinDedicatedVramBytes && _sharedBuffer.Read(_sharedCounter, _sharedItems))
+            {
+                usedBytes += HardwareMonitorLogic.GpuMemoryForAdapter(_sharedItems, chosen.Luid);
+            }
+
+            return new GpuSnapshot(usage, -1f, (ulong)Math.Max(0, usedBytes), chosen.DedicatedVram, chosen.Name);
         }
     }
 
-    private float SampleEngineUsage(IntPtr counter)
+    private GpuAdapterInfo? AdapterByLuid(ulong luid)
     {
-        return (float)Math.Clamp(SampleCounter(counter, PdhAggregate.Sum, reuseBuffer: true), 0.0, 100.0);
-    }
+        foreach (var adapter in _adapters)
+        {
+            if (adapter.Luid == luid)
+            {
+                return adapter;
+            }
+        }
 
-    private ulong SampleDedicatedMemory(IntPtr counter)
-    {
-        return (ulong)Math.Max(0, SampleCounter(counter, PdhAggregate.Max, reuseBuffer: false));
-    }
-
-    private enum PdhAggregate
-    {
-        Sum,
-        Max,
+        return null;
     }
 
     /// <summary>
-    /// 读取 PDH 计数器数组。引擎计数器每帧都读，缓冲区按需扩容后复用，避免每次采样都向堆申请内存。
+    /// 平滑各适配器利用率：GPU Engine 实例按进程存在，进程退出实例即消失，
+    /// 缺席的适配器目标按 0 衰减，避免选卡被残留的旧值钉死。
     /// </summary>
-    private double SampleCounter(IntPtr counter, PdhAggregate mode, bool reuseBuffer)
+    private void UpdateUsageEwma(Dictionary<ulong, float>? raw)
     {
-        uint bufSize = 0, itemCount = 0;
-        PdhGetFormattedCounterArrayW(counter, 0x00000200 /* PDH_FMT_DOUBLE */, ref bufSize, ref itemCount, IntPtr.Zero);
-        if (bufSize == 0 || itemCount == 0) return 0;
-
-        IntPtr buffer = IntPtr.Zero;
-        bool owns = false;
-        try
+        foreach (var luid in _usageEwma.Keys.ToArray())
         {
-            if (reuseBuffer)
-            {
-                if (_pdhBufferSize < bufSize)
-                {
-                    if (_pdhBuffer != IntPtr.Zero)
-                    {
-                        Marshal.FreeHGlobal(_pdhBuffer);
-                        _pdhBuffer = IntPtr.Zero;
-                    }
-
-                    _pdhBuffer = Marshal.AllocHGlobal((int)bufSize);
-                    _pdhBufferSize = bufSize;
-                }
-
-                buffer = _pdhBuffer;
-            }
-            else
-            {
-                buffer = Marshal.AllocHGlobal((int)bufSize);
-                owns = true;
-            }
-
-            if (PdhGetFormattedCounterArrayW(counter, 0x00000200, ref bufSize, ref itemCount, buffer) != 0)
-            {
-                return 0;
-            }
-
-            double acc = 0;
-            int itemSize = Marshal.SizeOf<PDH_FMT_COUNTERVALUE_ITEM>();
-            for (int i = 0; i < itemCount; i++)
-            {
-                var item = Marshal.PtrToStructure<PDH_FMT_COUNTERVALUE_ITEM>(IntPtr.Add(buffer, i * itemSize));
-                if (item.FmtValue.CStatus != 0 || item.FmtValue.doubleValue <= 0)
-                {
-                    continue;
-                }
-
-                if (mode == PdhAggregate.Sum)
-                {
-                    acc += item.FmtValue.doubleValue;
-                }
-                else if (item.FmtValue.doubleValue > acc)
-                {
-                    acc = item.FmtValue.doubleValue;
-                }
-            }
-
-            return acc;
+            var target = raw != null && raw.TryGetValue(luid, out var value) ? value : 0f;
+            _usageEwma[luid] = target * UsageSmoothFactor + _usageEwma[luid] * (1f - UsageSmoothFactor);
         }
-        finally
+
+        if (raw == null)
         {
-            if (owns && buffer != IntPtr.Zero)
+            return;
+        }
+
+        foreach (var (luid, value) in raw)
+        {
+            if (!_usageEwma.ContainsKey(luid))
             {
-                Marshal.FreeHGlobal(buffer);
+                _usageEwma[luid] = value * UsageSmoothFactor;
             }
         }
     }
@@ -848,19 +938,11 @@ internal sealed class DxgiPdhGpuAdapter : IDisposable
     {
         lock (_lock)
         {
-            if (_pdhQuery != IntPtr.Zero)
-            {
-                try { PdhCloseQuery(_pdhQuery); } catch { }
-                _pdhQuery = IntPtr.Zero;
-            }
-
-            if (_pdhBuffer != IntPtr.Zero)
-            {
-                try { Marshal.FreeHGlobal(_pdhBuffer); } catch { }
-                _pdhBuffer = IntPtr.Zero;
-                _pdhBufferSize = 0;
-            }
-
+            _pdhQuery?.Dispose();
+            _pdhQuery = null;
+            _engineBuffer.Dispose();
+            _dedBuffer.Dispose();
+            _sharedBuffer.Dispose();
             _initialized = false;
         }
     }
