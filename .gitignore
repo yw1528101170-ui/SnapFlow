@@ -9,6 +9,8 @@ dist/
 
 # 历史遗留：曾把构建命令参数误当输出目录生成的临时构建产物
 src/Jietu/jietu.buildcheck*/
+src/Jietu/binVerifyBuild/
+src/Jietu/binVerifyBuild*.xbf
 
 # Dependencies & caches
 .nupkg-cache/
