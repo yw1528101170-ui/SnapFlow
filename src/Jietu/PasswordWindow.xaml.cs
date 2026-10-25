@@ -30,12 +30,17 @@ public sealed partial class PasswordWindow : Window
     private bool _editingExisting;
     // TOTP 验证码 1 秒刷新计时器。
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _totpTimer;
+    // XAML 解析期间 ValueChanged/Checked/SelectionChanged 就会触发（NumberBox 的 Value、
+    // CheckBox 的 IsChecked、ComboBox 的 SelectedIndex 都是解析期赋值），
+    // 此时后面的命名元素还不存在——所有这类处理器必须先看本标志。
+    private bool _xamlReady;
 
     public PasswordWindow(AppHost host)
     {
         _host = host;
         _vault = host.Vault;
         InitializeComponent();
+        _xamlReady = true;
         WindowChrome.Apply(this, TitleBar, Root);
         AppWindow.Title = "密码库";
 
@@ -709,7 +714,7 @@ public sealed partial class PasswordWindow : Window
     /// <summary>类型切换：安全笔记没有用户名/密码/网址/TOTP，收起凭据字段避免误填。</summary>
     private void OnKindChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (CredentialFields is null)
+        if (!_xamlReady)
         {
             return;
         }
@@ -938,12 +943,20 @@ public sealed partial class PasswordWindow : Window
 
     private void OnToggleGenerator(object sender, RoutedEventArgs e)
     {
-        GeneratorPanel.Visibility = GeneratorPanel.Visibility == Visibility.Visible
-            ? Visibility.Collapsed
-            : Visibility.Visible;
-        if (GeneratorPanel.Visibility == Visibility.Visible)
+        var show = GeneratorPanel.Visibility != Visibility.Visible;
+        GeneratorPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (show)
         {
+            // 生成器面板挂在详情区内：未选中条目时详情区是收起的，这里一并展开。
+            DetailPane.Visibility = Visibility.Visible;
+            EmptyPane.Visibility = Visibility.Collapsed;
             Generate();
+        }
+        else if (_selectedId == null)
+        {
+            // 没在编辑条目时收起详情区，回到列表/空态。
+            DetailPane.Visibility = Visibility.Collapsed;
+            RefreshList(string.IsNullOrEmpty(SearchBox.Text) ? null : SearchBox.Text);
         }
     }
 
@@ -954,6 +967,11 @@ public sealed partial class PasswordWindow : Window
 
     private void Regenerate()
     {
+        if (!_xamlReady)
+        {
+            return;
+        }
+
         var phrase = GenPassphrase.IsChecked == true;
         GenWordsBox.Visibility = phrase ? Visibility.Visible : Visibility.Collapsed;
         GenLengthBox.IsEnabled = !phrase;
