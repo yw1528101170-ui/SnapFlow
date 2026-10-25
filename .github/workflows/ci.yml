@@ -18,9 +18,33 @@ jobs:
         uses: actions/checkout@v5
 
       - name: 安装 .NET SDK（按 global.json）
+        id: sdk-global
         uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
+        # aka.ms→dotnetorigin 链路偶发 409（微软侧 CDN 故障）：先容错，
+        # 走下面的显式版本兜底；两边都失败才让校验步骤报错。
+        continue-on-error: true
+
+      - name: 读取 global.json 的 SDK 版本
+        if: steps.sdk-global.outcome == 'failure'
+        id: sdkver
+        shell: pwsh
+        run: |
+          $v = (Get-Content global.json -Raw | ConvertFrom-Json).sdk.version
+          Add-Content $env:GITHUB_OUTPUT "version=$v"
+
+      - name: 兜底：显式版本安装 .NET SDK
+        if: steps.sdk-global.outcome == 'failure'
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '${{ steps.sdkver.outputs.version }}'
+
+      - name: 校验 SDK 满足 global.json
+        shell: pwsh
+        run: |
+          dotnet --version
+          if ($LASTEXITCODE -ne 0) { throw "dotnet SDK 不可用或版本不满足 global.json" }
 
       - name: 重建离线依赖缓存（SHA-256 全量校验）
         shell: pwsh
