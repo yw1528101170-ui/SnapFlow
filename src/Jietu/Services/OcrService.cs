@@ -10,8 +10,10 @@ internal static class OcrService
     /// <summary>
     /// 识别前把长边补到这个尺寸。系统 OCR 对小字号（截图里的 12px 界面文字）
     /// 分辨率不足，放大后行切分与字形判别都会明显变好；原本就够大的截图则不再放大。
+    /// 2200 是真实中文 UI 文本基准（11-14px）实测的收益拐点：12px 识别率约 86.6%→90.8%，
+    /// 继续加大（2600/3200）无进一步提升，放开放大上限到 4.0 反而略降。
     /// </summary>
-    private const double OcrTargetSide = 1600;
+    private const double OcrTargetSide = 2200;
 
     /// <summary>放大倍数上限，避免小图被拉到失真。</summary>
     private const double OcrMaxUpscale = 3.0;
@@ -47,7 +49,10 @@ internal static class OcrService
 
     public record OcrLineInfo(string Text, IReadOnlyList<OcrWordBox> Words, int X, int Y, int Width, int Height);
 
-    public static async Task<IReadOnlyList<OcrLineInfo>?> ReadLayoutAsync(byte[] png)
+    public static async Task<IReadOnlyList<OcrLineInfo>?> ReadLayoutAsync(
+        byte[] png,
+        double? targetSide = null,
+        double? maxUpscale = null)
     {
         var engine = Engine.Value;
         if (engine == null)
@@ -55,7 +60,7 @@ internal static class OcrService
             return null;
         }
 
-        var (prepared, scale) = await ImageBytes.DecodeForOcrAsync(png, OcrEngine.MaxImageDimension, OcrTargetSide, OcrMaxUpscale);
+        var (prepared, scale) = await ImageBytes.DecodeForOcrAsync(png, OcrEngine.MaxImageDimension, targetSide ?? OcrTargetSide, maxUpscale ?? OcrMaxUpscale);
         using (prepared)
         {
             var result = await engine.RecognizeAsync(prepared);
@@ -95,9 +100,9 @@ internal static class OcrService
         }
     }
 
-    public static async Task<string?> ReadAsync(byte[] png)
+    public static async Task<string?> ReadAsync(byte[] png, double? targetSide = null, double? maxUpscale = null)
     {
-        var lines = await ReadLayoutAsync(png);
+        var lines = await ReadLayoutAsync(png, targetSide, maxUpscale);
         if (lines == null || lines.Count == 0)
         {
             return null;

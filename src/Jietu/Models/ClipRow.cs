@@ -49,14 +49,15 @@ public sealed class ClipRow : INotifyPropertyChanged
     public Visibility TextVisibility => !IsImage || _missing ? Visibility.Visible : Visibility.Collapsed;
     public Visibility ImageVisibility => IsImage && !_missing ? Visibility.Visible : Visibility.Collapsed;
     public string? RecognizedText => _recognizedText;
-    public string RecognizedTextSnippet => !string.IsNullOrEmpty(_recognizedText) ? PreviewText(_recognizedText) : "";
+    public string RecognizedTextSnippet => !string.IsNullOrEmpty(_recognizedText) ? OcrSnippet(_recognizedText) : "";
     public bool HasRecognizedText => !string.IsNullOrWhiteSpace(_recognizedText);
     public Visibility HasRecognizedTextVisibility => HasRecognizedText ? Visibility.Visible : Visibility.Collapsed;
     public Visibility NoRecognizedTextVisibility => HasRecognizedText ? Visibility.Collapsed : Visibility.Visible;
 
-    /// <summary>仅图片行显示「图像记录」占位，文本行不参与。</summary>
+    /// <summary>仅图片行显示「图像记录」占位，文本行不参与；
+    /// OCR 只认出噪声（清完不剩内容）时也按没文字处理。</summary>
     public Visibility ImageNoTextVisibility =>
-        IsImage && !_missing && !HasRecognizedText ? Visibility.Visible : Visibility.Collapsed;
+        IsImage && !_missing && string.IsNullOrEmpty(RecognizedTextSnippet) ? Visibility.Visible : Visibility.Collapsed;
 
     public bool Pinned
     {
@@ -325,6 +326,38 @@ public sealed class ClipRow : INotifyPropertyChanged
         var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
         return normalized.Length > 400 ? normalized[..400] : normalized;
     }
+
+    /// <summary>
+    /// 列表行的 OCR 摘要：压平换行，让两行截断按自然断句铺满行宽；
+    /// 并滤掉系统 OCR 把设置页开关圆钮认成的孤立「0/O」——它们总是单独成词、
+    /// 不与内容相连，列表里看起来就像每条记录都以「0 」开头。全文预览与
+    /// 复制识别文字仍用原始文本，不受这里影响。
+    /// </summary>
+    internal static string OcrSnippet(string text)
+    {
+        var flat = text.Replace("\r\n", "\n").Replace('\r', '\n').Replace('\t', ' ').Replace('\n', ' ');
+        var builder = new System.Text.StringBuilder(flat.Length);
+        foreach (var part in flat.Split(' ', '\u3000', StringSplitOptions.RemoveEmptyEntries))
+        {
+            // 「0」与中文之间 OCR 不补空格，会黏成「0常规与自启」这种词，按词首再剥一层。
+            var token = part.Length > 1 && (part[0] is '0' or 'O') && IsCjk(part[1]) ? part[1..] : part;
+            if (token.Length == 1 && token[0] is '0' or 'O' or 'o')
+            {
+                continue;
+            }
+
+            if (builder.Length > 0)
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(token);
+        }
+
+        return builder.Length > 400 ? builder.ToString(0, 400) : builder.ToString();
+    }
+
+    private static bool IsCjk(char ch) => ch is >= '\u2E80' and <= '\u9FFF' or >= '\uF900' and <= '\uFAFF';
 
     private static string FormatTime(long unixMs, string source)
     {
