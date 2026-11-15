@@ -70,6 +70,12 @@ internal sealed class ClipboardService
     public void Unlisten()
     {
         NativeMethods.RemoveClipboardFormatListener(_owner);
+        lock (_clip)
+        {
+            _secretClearTimer?.Dispose();
+            _secretClearTimer = null;
+        }
+
         _running = false;
         Signal();
         try
@@ -96,7 +102,7 @@ internal sealed class ClipboardService
     public void SetText(string text)
     {
         var bytes = Encoding.Unicode.GetBytes(text + "\0");
-        Edit(() =>
+        var sequence = Edit(() =>
         {
             NativeMethods.EmptyClipboard();
             var handle = NativeMethods.AllocBytes(bytes);
@@ -105,8 +111,10 @@ internal sealed class ClipboardService
                 NativeMethods.GlobalFree(handle);
                 throw new InvalidOperationException("写入文字剪贴板失败。");
             }
+
+            return NativeMethods.GetClipboardSequenceNumber();
         });
-        FinishOwn(Hashing.OfText(text));
+        FinishOwn(Hashing.OfText(text), sequence);
     }
 
     /// <summary>
@@ -119,8 +127,7 @@ internal sealed class ClipboardService
     {
         EnsureExclusionFormats();
         var bytes = Encoding.Unicode.GetBytes(text + "\0");
-        uint sequence = 0;
-        Edit(() =>
+        var sequence = Edit(() =>
         {
             NativeMethods.EmptyClipboard();
             var handle = NativeMethods.AllocBytes(bytes);
@@ -135,9 +142,9 @@ internal sealed class ClipboardService
             Put(_excludeMonitorFormat, [1]);
             Put(_viewerIgnoreFormat, [1]);
             Put(_includeHistoryFormat, new byte[4]);
-            sequence = NativeMethods.GetClipboardSequenceNumber();
+            return NativeMethods.GetClipboardSequenceNumber();
         });
-        FinishOwn(Hashing.OfText(text));
+        FinishOwn(Hashing.OfText(text), sequence);
         ScheduleSecretClear(sequence, clearSeconds);
     }
 
@@ -205,25 +212,27 @@ internal sealed class ClipboardService
     {
         var dib = DibImage.Build(bgra, width, height);
         var pngFormat = _pngFormat == 0 ? NativeMethods.RegisterClipboardFormat("PNG") : _pngFormat;
-        Edit(() =>
+        var sequence = Edit(() =>
         {
             NativeMethods.EmptyClipboard();
             Put(NativeMethods.CfDib, dib);
             Put(pngFormat, png);
+            return NativeMethods.GetClipboardSequenceNumber();
         });
-        FinishOwn(Hashing.OfBytes(png));
+        FinishOwn(Hashing.OfBytes(png), sequence);
     }
 
     public void SetFiles(IReadOnlyList<string> paths)
     {
         var text = string.Join('\n', paths);
         var drop = FileDrop.Build(paths);
-        Edit(() =>
+        var sequence = Edit(() =>
         {
             NativeMethods.EmptyClipboard();
             Put(NativeMethods.CfHdrop, drop);
+            return NativeMethods.GetClipboardSequenceNumber();
         });
-        FinishOwn(Hashing.OfText(text));
+        FinishOwn(Hashing.OfText(text), sequence);
     }
 
     public void SetRich(string text, byte[]? html, byte[]? rtf)
@@ -234,7 +243,7 @@ internal sealed class ClipboardService
             _rtfFormat = NativeMethods.RegisterClipboardFormat("Rich Text Format");
         }
 
-        Edit(() =>
+        var sequence = Edit(() =>
         {
             NativeMethods.EmptyClipboard();
             if (text.Length > 0)
@@ -251,8 +260,10 @@ internal sealed class ClipboardService
             {
                 Put(_rtfFormat, rtf);
             }
+
+            return NativeMethods.GetClipboardSequenceNumber();
         });
-        FinishOwn(Hashing.OfRich(text, html, rtf));
+        FinishOwn(Hashing.OfRich(text, html, rtf), sequence);
     }
 
     private async Task LoopAsync()
@@ -593,7 +604,9 @@ internal sealed class ClipboardService
 
     private string? ReadText()
     {
-        var raw = CopyLimited(NativeMethods.CfUnicodeText, TextCap * 2 + 16);
+        // 读取上限放宽到 2MB：CopyLimited 超限即返回 null，若按 64KB 级上限读取，
+        // 超长文本会被整条丢弃而不是截断入库。TextClip 仍会把入库文本截到 TextCap。
+        var raw = CopyLimited(NativeMethods.CfUnicodeText, 2 * 1024 * 1024);
         return raw == null ? null : Encoding.Unicode.GetString(raw).TrimEnd('\0');
     }
 
@@ -764,6 +777,20 @@ internal sealed class ClipboardService
         // 打开剪贴板可能要重试（其他进程正占用），重试等待不能攥着 _clip 锁，
         // 否则 8×15ms 的退避会把 FinishOwn 等其他锁用户一起卡住。
         // 锁只包住「成功打开后的那次写入」，保证多个写入动作之间互斥、开与关成对出现。
+        Edit(() =>
+        {
+            action();
+            return NativeMethods.GetClipboardSequenceNumber();
+        });
+    }
+
+    /// <summary>
+    /// 写入并返回写入完成时（仍在 OpenClipboard 临界区内）的剪贴板序号。
+    /// 序号必须在关闭剪贴板前采集：关后再读，若另一进程恰好抢先写入，
+    /// 外部内容的序号会被记成"自己的"，导致这条复制被静默跳过、不进历史。
+    /// </summary>
+    private uint Edit(Func<uint> action)
+    {
         for (var attempt = 0; attempt < 8; attempt++)
         {
             lock (_clip)
@@ -772,8 +799,7 @@ internal sealed class ClipboardService
                 {
                     try
                     {
-                        action();
-                        return;
+                        return action();
                     }
                     finally
                     {
@@ -797,13 +823,19 @@ internal sealed class ClipboardService
         }
     }
 
-    private void FinishOwn(string hash)
+    private void FinishOwn(string hash, uint sequence = 0)
     {
         lock (_clip)
         {
             _ownHash = hash;
             _ownUntil = Environment.TickCount64 + 1500;
-            var sequence = NativeMethods.GetClipboardSequenceNumber();
+            // 优先用 Edit 临界区内采集的序号；调用方未提供时兜底读当前值
+            // （旧路径，存在与并发写入竞争的固有窗口）。
+            if (sequence == 0)
+            {
+                sequence = NativeMethods.GetClipboardSequenceNumber();
+            }
+
             if (sequence != 0)
             {
                 _ownSequence = sequence;

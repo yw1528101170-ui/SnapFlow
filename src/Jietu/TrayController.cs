@@ -105,7 +105,6 @@ internal sealed class TrayController
             _pins.Count,
             _pins.AnyGhost,
             settings.ShowOsd,
-            settings.OsdPosition,
             settings.OsdDisplay,
             settings.VaultHotkey,
             _vaultUnlocked());
@@ -153,12 +152,6 @@ internal sealed class TrayController
                 break;
             case TrayCommand.ToggleOsd:
                 _settingsApplier.ToggleOsd();
-                break;
-            case TrayCommand.OsdPositionTopRight:
-                _settingsApplier.SetOsdPosition("TopRight");
-                break;
-            case TrayCommand.OsdPositionTopLeft:
-                _settingsApplier.SetOsdPosition("TopLeft");
                 break;
             case TrayCommand.OsdDisplayPrimary:
                 _settingsApplier.SetOsdDisplay("Primary");

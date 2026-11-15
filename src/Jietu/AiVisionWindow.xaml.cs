@@ -32,6 +32,10 @@ public sealed partial class AiVisionWindow : Window
     private string? _pendingAsk;
     private readonly List<VisionTurn> _turns = [];
     private bool _streaming;
+    // 流式追加缓冲：`ResultText.Text += piece` 是 O(n²) 整串重建 + 每片全文重排，
+    // 长回答（数千 token）时 UI 有可感抖动。改为 StringBuilder 累积 + 80ms 节流刷 UI。
+    private readonly System.Text.StringBuilder _streamBuilder = new();
+    private long _lastStreamFlushMs = -1000;
     private bool _rawAnswerMode;
     private ImageViewerWindow? _viewer;
 
@@ -113,6 +117,7 @@ public sealed partial class AiVisionWindow : Window
         bool wasVisible = AppWindow.IsVisible;
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         AppWindow.MoveAndResize(ScreenUtil.PlaceNearCursor(hwnd, WindowWidth, WindowHeight));
+
         Activate();
         if (!wasVisible || !_entrancePlayed)
         {
@@ -313,6 +318,7 @@ public sealed partial class AiVisionWindow : Window
         if (!_streaming)
         {
             _streaming = true;
+            _streamBuilder.Clear();
             SetStatus("生成中", "SnapFlowAccentBrush");
             StopLoader();
             int token = _askToken;
@@ -331,7 +337,16 @@ public sealed partial class AiVisionWindow : Window
             ResultScroller.Visibility = Visibility.Visible;
         }
 
-        ResultText.Text += piece;
+        _streamBuilder.Append(piece);
+        // 节流窗口内的片段只累积不刷 UI；结束时 RevealAnswer 会写入完整文本兜底。
+        var now = Environment.TickCount64;
+        if (now - _lastStreamFlushMs < 80)
+        {
+            return;
+        }
+
+        _lastStreamFlushMs = now;
+        ResultText.Text = _streamBuilder.ToString();
         ResultScroller.ChangeView(null, ResultScroller.ScrollableHeight, null, true);
     }
 
@@ -618,7 +633,19 @@ public sealed partial class AiVisionWindow : Window
             return;
         }
 
-        _host.Clipboard.SetText(text);
+        try
+        {
+            _host.Clipboard.SetText(text);
+        }
+        catch (Exception ex)
+        {
+            // 剪贴板被其它程序长时间占用时 SetText 会抛异常，别让全局兜底
+            // 弹"内部错误"，直接给出明确反馈。
+            Log.Error(ex);
+            _host.Toast.Show("复制失败：剪贴板被占用，请稍后重试");
+            return;
+        }
+
         _host.Toast.Show("已复制 AI 分析结果");
 
         CopyGlyph.Visibility = Visibility.Collapsed;
@@ -646,6 +673,7 @@ public sealed partial class AiVisionWindow : Window
 
         try
         {
+            ScreenshotFiles.SweepTemp();
             var path = ScreenshotFiles.TempPngPath();
             await File.WriteAllBytesAsync(path, _currentPng);
             _host.Clipboard.SetFiles([path]);
@@ -666,6 +694,7 @@ public sealed partial class AiVisionWindow : Window
 
         try
         {
+            ScreenshotFiles.SweepTemp();
             var path = ScreenshotFiles.TempPngPath();
             await File.WriteAllBytesAsync(path, _currentPng);
             _host.PinFile(path);

@@ -1,8 +1,9 @@
-using Microsoft.UI;
+﻿using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -11,6 +12,7 @@ using Windows.Graphics;
 using Windows.Storage.Pickers;
 using Windows.Storage.Streams;
 using Windows.System;
+using Windows.UI;
 using Windows.UI.Core;
 
 namespace Jietu;
@@ -56,6 +58,7 @@ public sealed partial class SettingsWindow : Window
         _host = host;
         InitializeComponent();
         WindowChrome.Apply(this, TitleBar, Root);
+        GlassOverlays.Glassify(ErrorBar);
         AppWindow.Resize(new SizeInt32(824, 648));
         if (AppWindow.Presenter is OverlappedPresenter presenter)
         {
@@ -105,7 +108,6 @@ public sealed partial class SettingsWindow : Window
             TerminalSwitch.IsOn = settings.RecordTerminals;
             OsdSwitch.IsOn = settings.ShowOsd;
             OsdHideOnCaptureSwitch.IsOn = settings.OsdHideOnCapture;
-            OsdPositionBox.SelectedIndex = string.Equals(settings.OsdPosition, "TopLeft", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             UpdateOsdPreviewPosition();
             OsdDisplayBox.SelectedIndex = string.Equals(settings.OsdDisplay, "FollowCursor", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
             MultiMonitorModeBox.SelectedIndex = settings.MultiMonitorCaptureMode switch
@@ -356,6 +358,28 @@ public sealed partial class SettingsWindow : Window
         ApplyAndSave();
     }
 
+    /// <summary>
+    /// NumberBox 内层输入框在框架模板里写死了 NumberBoxTextBoxStyle（本版本框架模板内部
+    /// 的资源引用不回落到应用资源，覆盖键不生效），聚焦时会被切成框架白底。
+    /// 加载后直接在视觉树里找到内层 TextBox 换成玻璃样式，一步到位。
+    /// </summary>
+    private void OnRetentionBoxLoaded(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (FindFirst<TextBox>(RetentionBox) is not { } inner)
+            {
+                return;
+            }
+
+            inner.Style = (Style)Application.Current.Resources["GlassBoxInnerStyle"];
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+        }
+    }
+
     private void OnRetentionChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         if (_loading || _restoringRetention) return;
@@ -467,41 +491,61 @@ public sealed partial class SettingsWindow : Window
         AddIgnoreProcess();
     }
 
+    /// <summary>输入框这条路：校验 + 明确反馈，避免「点了没反应」看起来像个假按钮。</summary>
     private void AddIgnoreProcess()
     {
-        if (AddIgnoredProcess(NewIgnoreInput.Text))
+        var raw = NewIgnoreInput.Text;
+        if (string.IsNullOrWhiteSpace(raw))
         {
-            RenderIgnoreChips();
+            NewIgnoreInput.Focus(FocusState.Programmatic);
+            return;
+        }
+
+        if (TryAddIgnore(raw, out var message))
+        {
             NewIgnoreInput.Text = "";
+            RenderIgnoreChips();
             ApplyAndSave();
         }
-        else
-        {
-            NewIgnoreInput.Text = "";
-        }
+
+        _host.Toast.Show(message);
     }
 
-    /// <summary>归一化为小写 .exe 名称并去重；返回是否真的新增了一条。</summary>
-    private bool AddIgnoredProcess(string raw)
+    /// <summary>
+    /// 把一条输入并进排除列表。归一化与匹配都走 ProcessNames，保证「设置页加进去的」和
+    /// 「剪贴板拦截时比对的」是同一套规则（粘贴完整路径、少写 .exe、别名换名都不会失效）。
+    /// </summary>
+    private bool TryAddIgnore(string raw, out string message)
     {
-        var text = raw.Trim().ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(text))
+        var name = ProcessNames.NormalizeOne(raw);
+        if (name.Length == 0)
         {
+            message = "看不懂这个程序名：填文件名即可，例如 notepad.exe，也可以直接粘贴完整路径。";
             return false;
         }
 
-        if (!text.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        if (ProcessNames.CoveredBy(_ignoredProcesses, name))
         {
-            text += ".exe";
-        }
-
-        if (_ignoredProcesses.Contains(text, StringComparer.OrdinalIgnoreCase))
-        {
+            message = $"{name} 已经在排除列表里了。";
             return false;
         }
 
-        _ignoredProcesses.Add(text);
+        if (_ignoredProcesses.Count >= ProcessNames.MaxEntries)
+        {
+            message = $"最多排除 {ProcessNames.MaxEntries} 个程序，先移除几个再加。";
+            return false;
+        }
+
+        _ignoredProcesses.Add(name);
+        message = $"已排除 {name}，之后从它复制的内容不再进入历史{DescribeAliases(name)}。";
         return true;
+    }
+
+    /// <summary>别名提示：微信这类换过进程名的软件，排一个等于排两个，得让用户知道。</summary>
+    private static string DescribeAliases(string name)
+    {
+        var aliases = ProcessNames.AliasesOf(name);
+        return aliases.Count == 0 ? "" : $"（同时覆盖 {string.Join("、", aliases)}）";
     }
 
     private void RenderIgnoreChips()
@@ -543,9 +587,16 @@ public sealed partial class SettingsWindow : Window
                 _ignoredProcesses.Remove(proc);
                 RenderIgnoreChips();
                 ApplyAndSave();
+                _host.Toast.Show($"已恢复记录：{proc} 的复制会重新进入历史。");
             };
             sp.Children.Add(removeBtn);
             chip.Child = sp;
+            var aliases = ProcessNames.AliasesOf(proc);
+            if (aliases.Count > 0)
+            {
+                ToolTipService.SetToolTip(chip, $"同时覆盖 {string.Join("、", aliases)}");
+            }
+
             IgnoreChipsContainer.Children.Add(chip);
         }
 
@@ -557,7 +608,8 @@ public sealed partial class SettingsWindow : Window
 
     private void SyncQuickChip(Button chip, string proc)
     {
-        var added = _ignoredProcesses.Contains(proc, StringComparer.OrdinalIgnoreCase);
+        // 别名同源也算已排除：微信 3.x/4.x 换过进程名，别让人以为「快捷添加点了没反应」。
+        var added = ProcessNames.CoveredBy(_ignoredProcesses, proc);
         chip.IsEnabled = !added;
         ToolTipService.SetToolTip(chip, added ? "已在排除列表中" : $"一键排除 {proc}");
     }
@@ -588,7 +640,6 @@ public sealed partial class SettingsWindow : Window
             SaveFolder = FolderBox.Text.Trim(),
             IgnoredProcesses = _ignoredProcesses.ToList(),
             ShowOsd = OsdSwitch.IsOn,
-            OsdPosition = (OsdPositionBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "TopRight",
             OsdDisplay = (OsdDisplayBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Primary",
             OsdHideOnCapture = OsdHideOnCaptureSwitch.IsOn,
             MultiMonitorCaptureMode = (MultiMonitorModeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Auto",
@@ -883,7 +934,7 @@ public sealed partial class SettingsWindow : Window
     /// <summary>设置页内的提示对话框（与 PasswordWindow 的 ShowAppConfirmAsync 同观感）。</summary>
     private async Task ShowSettingsInfoAsync(string title, string message)
     {
-        await new ContentDialog
+        var dialog = new ContentDialog
         {
             Title = title,
             Content = new TextBlock
@@ -897,7 +948,89 @@ public sealed partial class SettingsWindow : Window
             CloseButtonText = "知道了",
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = Content.XamlRoot,
-        }.ShowAsync();
+        };
+        dialog.Glassify();
+        await dialog.ShowAsync();
+    }
+
+    /// <summary>手动配置面板的展开/收起（原来由 Expander 承担，现在自己管）。</summary>
+    private void OnToggleVaultAdvanced(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var show = VaultAdvancedPanel.Visibility != Visibility.Visible;
+            VaultAdvancedPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            VaultAdvancedChevron.Glyph = show ? "\uE70E" : "\uE70D";
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"切换手动配置面板失败：{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// ComboBox 的下拉面板是 Popup 里另起的一层，控件本地 Resources 覆盖不到它（实测无效），
+    /// 所以在每次展开时把 Popup 的底面板改成玻璃薄面，跟 Flyout 一致。
+    /// </summary>
+    private void OnComboDropDownOpened(object sender, object e)
+    {
+        try
+        {
+            if (sender is not ComboBox box) return;
+            var popup = FindFirst<Popup>(box);
+            if (popup?.Child is not FrameworkElement child)
+            {
+                return;
+            }
+
+            var panel = child is Border b ? b : FindFirst<Border>(child);
+            if (panel is null)
+            {
+                return;
+            }
+
+            var light = box.ActualTheme == ElementTheme.Light;
+            panel.Background = new SolidColorBrush(light
+                ? Color.FromArgb(0xD9, 0xFB, 0xFC, 0xFF)
+                : Color.FromArgb(0xEE, 0x1B, 0x20, 0x27));
+            panel.BorderBrush = new SolidColorBrush(light
+                ? Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)
+                : Color.FromArgb(0x2E, 0xDC, 0xE6, 0xF2));
+            panel.BorderThickness = new Thickness(1);
+            panel.CornerRadius = new CornerRadius(10);
+
+            // 面板里还套着不透明的 ListView / ScrollViewer 底，不清掉玻璃还是看不见
+            ClearOpaqueBackdrops(child);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"下拉面板着色失败：{ex.Message}");
+        }
+    }
+
+    private static void ClearOpaqueBackdrops(DependencyObject root)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var node = VisualTreeHelper.GetChild(root, i);
+            if (node is Panel panel) panel.Background = null;
+            if (node is Control control && node is not ComboBoxItem) control.Background = null;
+            ClearOpaqueBackdrops(node);
+        }
+    }
+
+    private static T? FindFirst<T>(DependencyObject root) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T hit) return hit;
+            var nested = FindFirst<T>(child);
+            if (nested is not null) return nested;
+        }
+        return null;
     }
 
     /// <summary>按扩展文件夹路径算出 ID 并填入，替代手工复制。</summary>
@@ -1011,15 +1144,6 @@ public sealed partial class SettingsWindow : Window
         AiPromptBox.Text = AppSettings.DefaultAiPrompt;
     }
 
-        private void OnOsdPositionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        UpdateOsdPreviewPosition();
-        if (!_loading)
-        {
-            ApplyAndSave();
-        }
-    }
-
     private void UpdateOsdPreviewPosition()
     {
         if (OsdPreviewHost == null)
@@ -1027,11 +1151,9 @@ public sealed partial class SettingsWindow : Window
             return;
         }
 
-        var isTopRight = OsdPositionBox.SelectedIndex != 1;
-        // 贴屏那一侧不留白（真实 OSD 就是贴边的），另一侧留出桌面空气，自由端曲线才看得清
-        OsdPreviewHost.HorizontalAlignment = isTopRight ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-        OsdPreviewHost.Margin = isTopRight ? new Thickness(26, 0, 6, 0) : new Thickness(6, 0, 26, 0);
-        // 左/右停靠的端部几何是镜像的，位置一变必须重新出图
+        // 缺口形卡片两侧留白对称，摆在预览区正中
+        OsdPreviewHost.HorizontalAlignment = HorizontalAlignment.Center;
+        OsdPreviewHost.Margin = new Thickness(16, 0, 16, 0);
         _osdPreviewSignature = string.Empty;
         RefreshOsdPreview();
     }
@@ -1068,10 +1190,9 @@ public sealed partial class SettingsWindow : Window
         }
 
         var metrics = _host.CurrentMetrics is { } live ? OsdRenderer.Metrics.From(live) : OsdPreviewRenderer.Demo;
-        bool topRight = OsdPositionBox.SelectedIndex != 1;
         double raster = root.RasterizationScale > 0 ? root.RasterizationScale : 1.0;
 
-        float natural = OsdPreviewRenderer.NaturalWidth(topRight, metrics);
+        float natural = OsdPreviewRenderer.NaturalWidth(metrics);
         if (natural <= 1f)
         {
             return;
@@ -1081,7 +1202,7 @@ public sealed partial class SettingsWindow : Window
         float scale = Math.Clamp((float)(availableDip * raster / natural), 0.35f, 1f);
         string signature = string.Create(CultureInfo.InvariantCulture,
             $"{metrics.Gpu:0}|{metrics.Cpu:0}|{metrics.Ram:0}|{metrics.Temp:0}|{metrics.VramGb:0.0}|" +
-            $"{metrics.Ghz:0.00}|{metrics.Down:0}|{metrics.Up:0}|{metrics.Fps:0}|{metrics.FpsMeasured}|{topRight}|{scale:0.000}");
+            $"{metrics.Ghz:0.00}|{metrics.Down:0}|{metrics.Up:0}|{metrics.Fps:0}|{metrics.FpsMeasured}|{scale:0.000}");
         if (string.Equals(signature, _osdPreviewSignature, StringComparison.Ordinal))
         {
             return;
@@ -1090,7 +1211,7 @@ public sealed partial class SettingsWindow : Window
         _osdPreviewRendering = true;
         try
         {
-            var bitmap = OsdPreviewRenderer.Render(scale, topRight, metrics);
+            var bitmap = OsdPreviewRenderer.Render(scale, metrics);
             if (bitmap is not { } bmp)
             {
                 return;
@@ -1109,12 +1230,13 @@ public sealed partial class SettingsWindow : Window
 
             _osdPreviewSignature = signature;
 
-            OsdPreviewHint.Text = _host.CurrentMetrics is null
-                ? "当前未开启屏幕性能悬浮窗，预览使用示例数据"
-                : metrics.FpsMeasured
-                    ? "预览由桌面悬浮窗的真实渲染器生成，数值与实机同步"
-                    : string.Create(CultureInfo.InvariantCulture,
-                        $"预览由桌面悬浮窗的真实渲染器生成；当前环境读不到合成器帧计数，帧率格显示刷新率 {metrics.RefreshHz:0}Hz");
+            OsdPreviewHint.Text = "常态为紧凑态，鼠标悬停才展开为详细版；"
+                + (_host.CurrentMetrics is null
+                    ? "当前未开启屏幕性能悬浮窗，预览使用示例数据"
+                    : metrics.FpsMeasured
+                        ? "预览由桌面悬浮窗的真实渲染器生成，数值与实机同步"
+                        : string.Create(CultureInfo.InvariantCulture,
+                            $"预览由桌面悬浮窗的真实渲染器生成；当前环境读不到合成器帧计数，帧率格显示刷新率 {metrics.RefreshHz:0}Hz"));
         }
         catch (Exception ex)
         {
@@ -1279,7 +1401,7 @@ public sealed partial class SettingsWindow : Window
         var transform = Motion.Prep(panel);
         transform.TranslateY = 10 * direction;
         Motion.Fade(panel, 0, 1, 120, Motion.Ease);
-        Motion.MoveY(panel, transform, 10 * direction, 0, 330, Motion.Spring(0.1));
+        Motion.MoveY(panel, transform, 10 * direction, 0, 330, Motion.Ease);
         RevealPanel(panel);
     }
 
@@ -1296,7 +1418,7 @@ public sealed partial class SettingsWindow : Window
         var transform = Motion.Prep(SectionTitleHost);
         transform.TranslateY = 7;
         Motion.Fade(SectionTitleHost, 0, 1, 210, Motion.Ease);
-        Motion.MoveY(SectionTitleHost, transform, 7, 0, 340, Motion.Spring(0.16));
+        Motion.MoveY(SectionTitleHost, transform, 7, 0, 340, Motion.Ease);
     }
 
     /// <summary>分组卡片依次错峰浮现，复刻 Apple 设置页的切页手感。</summary>
@@ -1318,15 +1440,91 @@ public sealed partial class SettingsWindow : Window
 
     private void OnQuickIgnoreClick(object sender, RoutedEventArgs e)
     {
-        if (sender is Button btn && btn.Tag is string proc && !string.IsNullOrWhiteSpace(proc))
+        if (sender is not Button btn || btn.Tag is not string proc || string.IsNullOrWhiteSpace(proc))
         {
-            if (AddIgnoredProcess(proc))
+            return;
+        }
+
+        if (TryAddIgnore(proc, out var message))
+        {
+            RenderIgnoreChips();
+            ApplyAndSave();
+        }
+
+        _host.Toast.Show(message);
+    }
+
+    /// <summary>点选列表：列出当前带窗口的程序，点一下就把它加进排除名单，不用知道 exe 叫什么。</summary>
+    private void OnPickRunningApp(object sender, RoutedEventArgs e)
+    {
+        var apps = RunningApps.List();
+        var flyout = new Flyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft };
+        var root = new StackPanel { Spacing = 8, Width = 380 };
+        root.Children.Add(new TextBlock
+        {
+            Text = "点一下即可排除；之后从该程序复制的内容不会进入历史。",
+            FontSize = 11.5,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+        });
+
+        if (apps.Count == 0)
+        {
+            root.Children.Add(new TextBlock
+            {
+                Text = "没有检测到带窗口的运行中程序。把那个程序打开后再来选一次即可。",
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+        else
+        {
+            var wrap = new WrapPanel { MaxWidth = 372 };
+            foreach (var app in apps)
+            {
+                wrap.Children.Add(BuildRunningAppChip(app, flyout));
+            }
+
+            root.Children.Add(new ScrollViewer
+            {
+                MaxHeight = 300,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = wrap,
+            });
+        }
+
+        flyout.Content = root;
+        flyout.ShowAt(PickRunningAppButton);
+    }
+
+    private Button BuildRunningAppChip(RunningApp app, Flyout flyout)
+    {
+        var excluded = ProcessNames.CoveredBy(_ignoredProcesses, app.ExeName);
+        var chip = new Button
+        {
+            Content = Shorten(app.Display, 16),
+            Style = (Style)Application.Current.Resources["FilterChipStyle"],
+            Margin = new Thickness(0, 0, 6, 6),
+            IsEnabled = !excluded,
+        };
+        ToolTipService.SetToolTip(chip, excluded ? $"已在排除列表中：{app.ExeName}" : $"{app.Title}\n{app.ExeName}");
+        chip.Click += (_, _) =>
+        {
+            flyout.Hide();
+            if (TryAddIgnore(app.ExeName, out var message))
             {
                 RenderIgnoreChips();
                 ApplyAndSave();
             }
-        }
+
+            _host.Toast.Show(message);
+        };
+        return chip;
     }
+
+    private static string Shorten(string text, int max)
+        => text.Length <= max ? text : text[..(max - 1)] + "…";
 
     private async void OnTestAiConnection(object sender, RoutedEventArgs e)
     {

@@ -9,22 +9,28 @@ internal readonly record struct OsdPreviewBitmap(byte[] Png, int Width, int Heig
 /// </summary>
 internal static class OsdPreviewRenderer
 {
+    /// <summary>
+    /// 预览取哪一个形态：常态是紧凑态（悬停才展开），所以预览按紧凑态出图，
+    /// 与用户日常看到的样子一致。
+    /// </summary>
+    private const float PreviewExpand = 0f;
+
     /// <summary>按 1.0 缩放（= 1dip:1px）渲染时的画布宽度，用于反推预览该缩多少。</summary>
-    internal static int NaturalWidth(bool topRight, in OsdRenderer.Metrics m)
-        => OsdRenderer.Layout(1f, topRight, m).BufferWidth;
+    internal static int NaturalWidth(in OsdRenderer.Metrics m)
+        => OsdRenderer.Layout(1f, PreviewExpand, m).BufferWidth;
 
     /// <summary>
     /// 以给定缩放渲染一张 OSD 稳定态位图。scale 为设备像素相对 dip 的倍率，
     /// 传「目标像素宽 / NaturalWidth」即可得到刚好铺满预览区的清晰位图。
     /// </summary>
-    internal static OsdPreviewBitmap? Render(float scale, bool topRight, in OsdRenderer.Metrics m)
+    internal static OsdPreviewBitmap? Render(float scale, in OsdRenderer.Metrics m)
     {
         if (scale <= 0.05f)
         {
             return null;
         }
 
-        var frame = OsdRenderer.Layout(scale, topRight, m) with { Reveal = 1f };
+        var frame = OsdRenderer.Layout(scale, PreviewExpand, m) with { Reveal = 1f };
         using var canvas = new LayeredCanvas();
         if (!canvas.Ensure(frame.BufferWidth, frame.BufferHeight) || canvas.Graphics == IntPtr.Zero)
         {

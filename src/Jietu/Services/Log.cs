@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Jietu;
 
 public static class Log
@@ -33,7 +35,9 @@ public static class Log
                 }
                 else
                 {
-                    _estimatedBytes += line.Length;
+                    // 按实际 UTF-8 字节数计量：中文字符 3 字节/字，按字符数会低估到 1/3，
+                    // 滚动阈值实际形同虚设（log.old.txt 可膨胀到约 600KB）。
+                    _estimatedBytes += Encoding.UTF8.GetByteCount(line);
                 }
 
                 if (_estimatedBytes > 200_000)

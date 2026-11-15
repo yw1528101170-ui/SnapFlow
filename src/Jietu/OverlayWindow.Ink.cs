@@ -250,11 +250,21 @@ public sealed partial class OverlayWindow
         CloseText(false);
         SetHint("正在智能扫描并识别敏感隐私信息 (手机 / 身份证 / 邮箱 / IP / 密钥)…");
 
+        // 记录发起时的会话：识别期间用户可能 Esc 关闭遮罩甚至开了新会话，
+        // 恢复后把陈旧坐标 RememberStroke 进新会话会把马赛克画到错误的位置上。
+        var sessionEpoch = _pickEpoch;
+
         try
         {
             var cropped = Crop(_source, _frameWidth, rect);
             var png = await ImageBytes.ToPngAsync(cropped, rect.Width, rect.Height);
             var boxes = await PrivacyRedactService.DetectAsync(png);
+
+            if (_pick == null || _pickEpoch != sessionEpoch)
+            {
+                // 会话已关闭或已被新会话取代：静默放弃本次识别结果。
+                return;
+            }
 
             if (boxes.Count == 0)
             {

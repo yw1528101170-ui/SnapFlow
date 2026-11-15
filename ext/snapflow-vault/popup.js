@@ -23,7 +23,11 @@ function sendNative(message) {
     const timeout = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error("桌面端响应超时")), NATIVE_TIMEOUT_MS);
     });
-    return Promise.race([chrome.runtime.sendNativeMessage(HOST, message), timeout])
+    const native = chrome.runtime.sendNativeMessage(HOST, message);
+    // race 超时后底层 native promise 稍后 reject 会变成 unhandledrejection：
+    // 挂一个空 catch 让超时结果成为唯一结局。
+    native.catch(() => {});
+    return Promise.race([native, timeout])
         .finally(() => clearTimeout(timer));
 }
 
@@ -197,16 +201,27 @@ function renderEntries(entries, tabId) {
         button.textContent = "填充";
         button.addEventListener("click", async () => {
             try {
-                const result = await chrome.tabs.sendMessage(tabId, {
-                    action: "snapflow-fill",
-                    username: entry.username,
-                    password: entry.password,
+                // 按需注入：先注入填充脚本（定义 window.__snapflowFill），
+                // 再调用填充入口。不再依赖常驻 content script。
+                await chrome.scripting.executeScript({
+                    target: { tabId },
+                    files: ["content.js"],
                 });
+                const injection = await chrome.scripting.executeScript({
+                    target: { tabId },
+                    func: (username, password) => window.__snapflowFill(username, password),
+                    args: [entry.username, entry.password],
+                });
+                const result = injection?.[0]?.result;
                 button.textContent = result?.ok ? "已填 ✓" : "失败";
+                if (result?.ok === false && result?.error) {
+                    setHint(result.error);
+                    return;
+                }
             } catch {
-                // 页面在扩展安装前已打开（无内容脚本）、或浏览器扩展页等不可注入页面。
+                // 浏览器内置页（chrome://、Web Store 等）不可注入。
                 button.textContent = "失败";
-                setHint("这个页面无法注入填充脚本。刷新页面后重试；仍失败时请确认页面不是浏览器内置页面。");
+                setHint("这个页面无法注入填充脚本；请确认当前页面是普通网页而不是浏览器内置页面。");
                 return;
             }
             setTimeout(() => window.close(), 600);

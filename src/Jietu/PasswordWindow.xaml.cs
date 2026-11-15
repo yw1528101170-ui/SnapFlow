@@ -234,6 +234,7 @@ public sealed partial class PasswordWindow : Window
             dialog.DefaultButton = danger ? ContentDialogButton.Close : ContentDialogButton.Primary;
         }
 
+        dialog.Glassify();
         return await dialog.ShowAsync() == ContentDialogResult.Primary;
     }
 
@@ -262,6 +263,7 @@ public sealed partial class PasswordWindow : Window
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = Content.XamlRoot,
         };
+        dialog.Glassify();
 
         if (validate != null)
         {

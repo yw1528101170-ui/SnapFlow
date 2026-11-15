@@ -4,11 +4,15 @@ using System.IO.Compression;
 
 namespace IconGen;
 
+// SnapFlow 图标生成器：扁平单色风格。
+// 设计：品牌蓝 #2D6EFA 纯色方圆基底（无渐变无光影），
+//       图案为两片层叠卡片（后片半透白微露旋转，前片实心白）+ 右上四芒星光。
+//       全部 SDF 程序化绘制 + 超采样抗锯齿。
 internal static class Program
 {
     private static void Main()
     {
-        Console.WriteLine("Generating SnapFlow Fluent Icon...");
+        Console.WriteLine("Generating SnapFlow Flat Icon...");
         var sizes = new[] { 256, 128, 64, 48, 40, 32, 24, 20, 16 };
         var images = new (int Size, byte[] Png)[sizes.Length];
 
@@ -96,183 +100,94 @@ internal static class Program
         var cx = (x - 0.5) * 2.0;
         var cy = (y - 0.5) * 2.0;
 
-        // Size-dependent squircle parameters
         var squircleRad = size <= 20 ? 0.92 : (size <= 32 ? 0.88 : 0.85);
-        var shadowOffset = size <= 20 ? 0.035 : (size <= 32 ? 0.045 : 0.065);
-        var shadowBlur = size <= 20 ? 0.08 : (size <= 32 ? 0.12 : 0.18);
 
-        // 1. Ambient Drop Shadow under Squircle (Deep Indigo/Slate)
-        var sDist = SquircleDist(cx, cy - shadowOffset, squircleRad, squircleRad, 3.8);
-        if (sDist <= 0)
+        // 图案几何：后片左上微露并旋转，前片右下压住，右上一颗四芒星光
+        double paneHalf, paneR, offX, offY, sparkleR;
+        bool sparkle;
+        switch (size)
         {
-            Blend(ref r, ref g, ref b, ref a, 0.06, 0.08, 0.22, 0.26);
-        }
-        else if (sDist < shadowBlur)
-        {
-            var sa = Math.Clamp(1.0 - sDist / shadowBlur, 0.0, 1.0);
-            sa = sa * sa * 0.26;
-            Blend(ref r, ref g, ref b, ref a, 0.06, 0.08, 0.22, sa);
+            case <= 20:
+                paneHalf = 0.42; paneR = 0.14; offX = 0.085; offY = 0.10;
+                sparkleR = 0; sparkle = false;
+                break;
+            case <= 48:
+                paneHalf = 0.40; paneR = 0.13; offX = 0.12; offY = 0.14;
+                sparkleR = 0.17; sparkle = true;
+                break;
+            default:
+                paneHalf = 0.395; paneR = 0.135; offX = 0.13; offY = 0.15;
+                sparkleR = 0.155; sparkle = true;
+                break;
         }
 
-        // 2. Main Squircle Body (Fluent Aurora: Electric Sky Blue -> Royal Blue -> Iris / Violet)
+        var rotRad = -9.0 * Math.PI / 180.0;
+        var cosR = Math.Cos(rotRad);
+        var sinR = Math.Sin(rotRad);
+
+        // 1. 纯色方圆基底：品牌蓝 #2D6EFA，无渐变无光影
         var bodyDist = SquircleDist(cx, cy, squircleRad, squircleRad, 3.8);
         if (bodyDist <= 0)
         {
-            // Diagonal gradient from top-left (-0.7, -0.7) to bottom-right (0.7, 0.7)
-            var t = Math.Clamp((cx * 0.65 + cy * 0.75 + 1.1) / 2.2, 0.0, 1.0);
-
-            // Top-left: Vibrant Cyan / Sky Blue (0, 185, 255)
-            // Mid: Deep Electric Royal (45, 110, 250)
-            // Bottom-right: Iris / Violet (115, 65, 245)
-            double bgR, bgG, bgB;
-            if (t < 0.45)
-            {
-                var k = t / 0.45;
-                bgR = 0.0 + (45.0 - 0.0) * k;
-                bgG = 185.0 + (110.0 - 185.0) * k;
-                bgB = 255.0 + (250.0 - 255.0) * k;
-            }
-            else
-            {
-                var k = (t - 0.45) / 0.55;
-                bgR = 45.0 + (115.0 - 45.0) * k;
-                bgG = 110.0 + (65.0 - 110.0) * k;
-                bgB = 250.0 + (245.0 - 250.0) * k;
-            }
-
-            // Upper-left specular light wash
-            var lightDist = Math.Sqrt((x - 0.24) * (x - 0.24) + (y - 0.20) * (y - 0.20));
-            var radial = Math.Clamp(1.0 - lightDist / 0.90, 0.0, 1.0);
-            bgR += radial * 28.0;
-            bgG += radial * 32.0;
-            bgB += radial * 15.0;
-
-            // Micro-chamfer / Bevel rim
-            if (bodyDist > -0.065)
-            {
-                var rimT = (bodyDist + 0.065) / 0.065;
-                var facingTL = Math.Clamp((-cx - cy + 0.3) * 0.75, 0.0, 1.0);
-                var facingBR = Math.Clamp((cx + cy + 0.3) * 0.75, 0.0, 1.0);
-
-                // Top-left catches crisp white reflection; bottom-right catches subtle occlusion
-                bgR = bgR * (1.0 - facingBR * 0.25 * rimT) + 255.0 * facingTL * 0.35 * rimT;
-                bgG = bgG * (1.0 - facingBR * 0.25 * rimT) + 255.0 * facingTL * 0.35 * rimT;
-                bgB = bgB * (1.0 - facingBR * 0.25 * rimT) + 255.0 * facingTL * 0.35 * rimT;
-            }
-
-            Blend(ref r, ref g, ref b, ref a, bgR / 255.0, bgG / 255.0, bgB / 255.0, 1.0);
-
-            // 3. Inner Acrylic Translucent Plate (for size >= 32)
-            if (size >= 32)
-            {
-                var innerDist = SquircleDist(cx, cy, 0.68, 0.68, 3.2);
-                if (innerDist <= 0)
-                {
-                    // Subtle translucent frosty sheen
-                    var innerT = Math.Clamp((-cy * 0.5 + 0.5), 0.0, 1.0);
-                    var innerAlpha = 0.08 + 0.06 * innerT;
-                    Blend(ref r, ref g, ref b, ref a, 1.0, 1.0, 1.0, innerAlpha);
-                }
-            }
+            Blend(ref r, ref g, ref b, ref a, 45.0 / 255.0, 110.0 / 255.0, 250.0 / 255.0, 1.0);
         }
 
-        // 4. Center Aperture / Focus Ring (The "Flow" Lens element, for size >= 32)
-        if (size >= 32)
+        // 2. 后片：半透白（扁平设计的层次表达）
+        var backDist = RoundedRectSdf(cx, cy, -offX, -offY, paneHalf, paneHalf, paneR, cosR, sinR);
+        if (bodyDist <= 0 && backDist <= 0)
         {
-            var ringRadius = size <= 48 ? 0.26 : 0.28;
-            var ringThick = size <= 48 ? 0.040 : 0.034;
-            var distToCenter = Math.Sqrt(cx * cx + cy * cy);
-            var ringDist = Math.Abs(distToCenter - ringRadius) - ringThick;
-
-            // Ring shadow
-            if (size >= 48)
-            {
-                var ringShadowDist = Math.Abs(Math.Sqrt(cx * cx + (cy - 0.02) * (cy - 0.02)) - ringRadius) - ringThick;
-                if (ringShadowDist <= 0)
-                {
-                    Blend(ref r, ref g, ref b, ref a, 0.05, 0.08, 0.25, 0.22);
-                }
-            }
-
-            if (ringDist <= 0)
-            {
-                // Ring gradient: cyan-white to soft purple
-                var ringAngleT = Math.Clamp((cx - cy + 0.5) * 0.7, 0.0, 1.0);
-                var ringR = 0.85 + 0.15 * ringAngleT;
-                var ringG = 0.95 + 0.05 * ringAngleT;
-                var ringB = 1.0;
-                Blend(ref r, ref g, ref b, ref a, ringR, ringG, ringB, 0.75);
-            }
-            else if (ringDist < 0.015)
-            {
-                var ringAlpha = (1.0 - ringDist / 0.015) * 0.75;
-                Blend(ref r, ref g, ref b, ref a, 0.90, 0.98, 1.0, ringAlpha);
-            }
+            Blend(ref r, ref g, ref b, ref a, 1.0, 1.0, 1.0, 0.55);
         }
 
-        // 5. Precision Viewfinder Corner Reticles (The "Snap" Frames)
-        // Shadow under reticles (size >= 24)
-        if (size >= 24)
-        {
-            var shadowReticleDist = ReticleSdf(cx, cy - 0.025, size);
-            if (shadowReticleDist <= 0)
-            {
-                Blend(ref r, ref g, ref b, ref a, 0.04, 0.06, 0.20, 0.36);
-            }
-            else if (shadowReticleDist < 0.045)
-            {
-                var sAlpha = (1.0 - shadowReticleDist / 0.045) * 0.36;
-                Blend(ref r, ref g, ref b, ref a, 0.04, 0.06, 0.20, sAlpha);
-            }
-        }
-
-        // Viewfinder reticle body (Pure crisp luminous white)
-        var reticleDist = ReticleSdf(cx, cy, size);
-        if (reticleDist <= 0)
+        // 3. 前片：实心白
+        var frontDist = RoundedRectSdf(cx, cy, offX, offY, paneHalf, paneHalf, paneR, 1.0, 0.0);
+        if (frontDist <= 0)
         {
             Blend(ref r, ref g, ref b, ref a, 1.0, 1.0, 1.0, 1.0);
         }
-        else if (reticleDist < 0.018)
+
+        // 4. 四芒星光（size>=32）
+        if (sparkle && bodyDist <= 0)
         {
-            var alpha = 1.0 - reticleDist / 0.018;
-            Blend(ref r, ref g, ref b, ref a, 1.0, 1.0, 1.0, alpha);
-        }
-
-        // 6. Central Focus Core (Precision Dot & Glow)
-        if (size >= 20)
-        {
-            var dotRadius = size <= 20 ? 0.095 : (size <= 24 ? 0.090 : (size <= 48 ? 0.082 : 0.075));
-
-            // Soft cyan halo around center dot (at size >= 32)
-            if (size >= 32)
-            {
-                var haloDist = Math.Sqrt(cx * cx + cy * cy) - dotRadius;
-                if (haloDist > 0 && haloDist < 0.08)
-                {
-                    var haloAlpha = Math.Clamp(1.0 - haloDist / 0.08, 0.0, 1.0) * 0.38;
-                    Blend(ref r, ref g, ref b, ref a, 0.55, 0.88, 1.0, haloAlpha);
-                }
-            }
-
-            // Dot shadow
-            var dotShadowDist = Math.Sqrt(cx * cx + (cy - 0.02) * (cy - 0.02)) - dotRadius;
-            if (dotShadowDist <= 0)
-            {
-                Blend(ref r, ref g, ref b, ref a, 0.04, 0.06, 0.20, 0.30);
-            }
-
-            // Dot body (Pure crisp white)
-            var dotDist = Math.Sqrt(cx * cx + cy * cy) - dotRadius;
-            if (dotDist <= 0)
+            var sd = SparkleSdf(cx - 0.50, cy + 0.44, sparkleR, 0.30);
+            if (sd <= 0)
             {
                 Blend(ref r, ref g, ref b, ref a, 1.0, 1.0, 1.0, 1.0);
             }
-            else if (dotDist < 0.015)
-            {
-                var alpha = 1.0 - dotDist / 0.015;
-                Blend(ref r, ref g, ref b, ref a, 1.0, 1.0, 1.0, alpha);
-            }
         }
+    }
+
+    /// <summary>圆角矩形 SDF（支持绕中心旋转）。</summary>
+    private static double RoundedRectSdf(double px, double py, double cxx, double cyy, double halfW, double halfH, double rad, double cosA, double sinA)
+    {
+        var dx = px - cxx;
+        var dy = py - cyy;
+        var lx = dx * cosA + dy * sinA;
+        var ly = -dx * sinA + dy * cosA;
+        var qx = Math.Abs(lx) - (halfW - rad);
+        var qy = Math.Abs(ly) - (halfH - rad);
+        var ox = Math.Max(qx, 0);
+        var oy = Math.Max(qy, 0);
+        return Math.Sqrt(ox * ox + oy * oy) + Math.Min(Math.Max(qx, qy), 0) - rad;
+    }
+
+    /// <summary>
+    /// 四芒星光 SDF：两片细长菱形（横 + 竖）的并集——尖角在 N/E/S/W，
+    /// 对角线方向深度收腰（腰宽 ≈ 0.24R），即经典的 "twinkle" 闪光轮廓。
+    /// </summary>
+    private static double SparkleSdf(double x, double y, double tipR, double waist)
+    {
+        var d1 = DiamondSdf(x, y, tipR, tipR * waist);
+        var d2 = DiamondSdf(x, y, tipR * waist, tipR);
+        return Math.Min(d1, d2);
+    }
+
+    private static double DiamondSdf(double x, double y, double a, double b)
+    {
+        var nx = Math.Abs(x) / a;
+        var ny = Math.Abs(y) / b;
+        var d = nx + ny - 1.0;
+        return d / Math.Sqrt(1.0 / (a * a) + 1.0 / (b * b));
     }
 
     private static double SquircleDist(double x, double y, double rx, double ry, double n)
@@ -281,80 +196,6 @@ internal static class Program
         var ny = Math.Abs(y / ry);
         var p = Math.Pow(Math.Pow(nx, n) + Math.Pow(ny, n), 1.0 / n);
         return p - 1.0;
-    }
-
-    private static double ReticleSdf(double x, double y, int size)
-    {
-        var px = Math.Abs(x);
-        var py = Math.Abs(y);
-
-        double cornerC, radius, armLen, halfThick;
-
-        if (size <= 20)
-        {
-            // Crisp, bold corner brackets for 16x16 / 20x20
-            cornerC = 0.56;
-            radius = 0.13;
-            armLen = 0.38;
-            halfThick = 0.115;
-        }
-        else if (size <= 32)
-        {
-            cornerC = 0.53;
-            radius = 0.14;
-            armLen = 0.33;
-            halfThick = 0.095;
-        }
-        else
-        {
-            cornerC = 0.50;
-            radius = 0.15;
-            armLen = 0.28;
-            halfThick = 0.080;
-        }
-
-        var kx = cornerC - radius;
-        var ky = cornerC - radius;
-
-        double distToCenterline;
-
-        if (px >= kx && py >= ky)
-        {
-            var arcDist = Math.Sqrt((px - kx) * (px - kx) + (py - ky) * (py - ky));
-            distToCenterline = Math.Abs(arcDist - radius);
-        }
-        else if (py >= ky)
-        {
-            distToCenterline = DistToSegment(px, py, cornerC - armLen, cornerC, kx, cornerC);
-        }
-        else if (px >= kx)
-        {
-            distToCenterline = DistToSegment(px, py, cornerC, cornerC - armLen, cornerC, ky);
-        }
-        else
-        {
-            var dHoriz = DistToSegment(px, py, cornerC - armLen, cornerC, kx, cornerC);
-            var dVert = DistToSegment(px, py, cornerC, cornerC - armLen, cornerC, ky);
-            distToCenterline = Math.Min(dHoriz, dVert);
-        }
-
-        return distToCenterline - halfThick;
-    }
-
-    private static double DistToSegment(double px, double py, double x1, double y1, double x2, double y2)
-    {
-        var dx = x2 - x1;
-        var dy = y2 - y1;
-        var l2 = dx * dx + dy * dy;
-        if (l2 < 1e-9)
-        {
-            return Math.Sqrt((px - x1) * (px - x1) + (py - y1) * (py - y1));
-        }
-
-        var t = Math.Clamp(((px - x1) * dx + (py - y1) * dy) / l2, 0.0, 1.0);
-        var qx = x1 + t * dx;
-        var qy = y1 + t * dy;
-        return Math.Sqrt((px - qx) * (px - qx) + (py - qy) * (py - qy));
     }
 
     private static void Blend(ref double r, ref double g, ref double b, ref double a, double sr, double sg, double sb, double sa)

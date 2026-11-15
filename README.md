@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/yw1528101170-ui/SnapFlow/actions/workflows/ci.yml"><img src="https://github.com/yw1528101170-ui/SnapFlow/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
-  <a href="https://github.com/yw1528101170-ui/SnapFlow/releases/latest"><img src="https://img.shields.io/badge/release-v1.1.6-blue" alt="release"/></a>
+  <a href="https://github.com/yw1528101170-ui/SnapFlow/releases/latest"><img src="https://img.shields.io/badge/release-v1.2.0-blue" alt="release"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="license"/></a>
 </p>
 
@@ -34,7 +34,7 @@
 - **剪贴板历史**：`Alt+V` 唤出，统一管理最近的文字与图像，支持搜索回溯。
 - **本地密码库**：Argon2id + AES-256-GCM 整库加密，主密码不出本机；Windows Hello 快速解锁、加密备份与恢复、Chrome/Edge/Bitwarden CSV 导入、回收站与密码体检；窗口防截屏、机密复制不进剪贴板历史且定时清除、空闲/锁屏/睡眠自动锁定。配套浏览器扩展（`ext/snapflow-vault`，随安装包分发）支持 Chrome/Edge 站点自动填充与强密码生成。
 - **AI 视觉对话**：截图一键发给多模态大模型，流式回答、多轮追问、Markdown 渲染（在设置中配置 API 端点与密钥）。
-- **屏幕性能监控悬浮窗 (OSD)**：极简置顶挂件，鼠标全穿透零干扰，实时监控 GPU（利用率/显存/温度，LUID 多卡适配）、CPU 实时频率与利用率、内存与网络速率，口径对齐任务管理器；支持左上/右上角停靠及截图时智能避让。
+- **屏幕性能监控悬浮窗 (OSD)**：贴屏幕顶部居中的极简置顶挂件，鼠标全穿透零干扰，实时监控 GPU（利用率/显存/温度，LUID 多卡适配）、CPU 实时频率与利用率、内存与网络速率，口径对齐任务管理器；常态吸附成一窄条只显示四条细轨，鼠标悬停展开为详细版，截图时智能避让。
 - **流畅动效**：OSD「灵动岛」阻尼弹簧展开收起、数值指数缓动；系统 Toast 玻璃胶囊上浮淡入、宽度弹性形变。
 - **开箱即用**：自带完整 .NET 运行时，常驻托盘，内存与 CPU 占用极低；Fluent Design 深浅色自适应。
 

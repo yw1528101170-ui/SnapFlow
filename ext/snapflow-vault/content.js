@@ -1,5 +1,6 @@
-// SnapFlow 密码库 - 内容脚本：只负责接收 popup 的填充指令并写进登录表单。
-// 不与桌面端通信；凭据只在填充瞬间存在，不做任何存储。
+// SnapFlow 密码库 - 填充脚本：由 popup 在用户点击「填充」时经 chrome.scripting
+// 按需注入（不再以 content_scripts 常驻所有页面）。不与桌面端通信；
+// 凭据只在填充瞬间存在，不做任何存储。
 
 (() => {
     "use strict";
@@ -73,8 +74,9 @@
         return { ok: true, filledUsername };
     }
 
-    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-        if (message?.action !== "snapflow-fill") return;
-        sendResponse(fill(message.username, message.password));
-    });
+    // 填充入口挂到隔离世界的 window 上（幂等）：popup 每次填充先注入本文件，
+    // 再用 chrome.scripting.executeScript(func) 调这个入口。
+    if (!window.__snapflowFill) {
+        window.__snapflowFill = fill;
+    }
 })();

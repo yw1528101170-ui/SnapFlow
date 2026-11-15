@@ -168,6 +168,19 @@ public sealed class HardwareMonitorLogicTests
     public void SelectGpuAdapter_EmptyUsageKeepsPrimary()
         => Assert.Equal(0xAUL, HardwareMonitorLogic.SelectGpuAdapter(0xA, new Dictionary<ulong, float>()));
 
+    [Fact]
+    public void SelectGpuAdapter_HysteresisRequiresClearLeadToSwitchBack()
+    {
+        var usage = new Dictionary<ulong, float> { [0xA] = 30f, [0xB] = 32f };
+
+        // 已切到核显 B：主卡 A 仅反超 2pp 不切回（避免阈值附近逐秒跳变）
+        Assert.Equal(0xBUL, HardwareMonitorLogic.SelectGpuAdapter(0xA, usage, 0xB));
+
+        // 反超 8pp 以上才切回
+        var usage2 = new Dictionary<ulong, float> { [0xA] = 42f, [0xB] = 32f };
+        Assert.Equal(0xAUL, HardwareMonitorLogic.SelectGpuAdapter(0xA, usage2, 0xB));
+    }
+
     // ---------------- CPU 实时频率 ----------------
 
     [Theory]

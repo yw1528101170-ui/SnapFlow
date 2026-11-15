@@ -89,6 +89,20 @@ public sealed class HistoryStore : IDisposable
                 LastRecoveryMessage = "历史数据库损坏且文件被占用，未能备份重建，本次历史记录不可用";
                 Log.Error(LastRecoveryMessage);
                 _connection = CreateConnection(databasePath);
+                // 降级路径只求能对现有文件尽力而为：至少补 busy_timeout，
+                // 否则锁竞争直接抛 SQLITE_BUSY，且发生在初始化阶段会被再次误判为"损坏"。
+                try
+                {
+                    _connection.Open();
+                    using var busyCommand = _connection.CreateCommand();
+                    busyCommand.CommandText = "PRAGMA busy_timeout = 2000;";
+                    busyCommand.ExecuteNonQuery();
+                }
+                catch (Exception degraded)
+                {
+                    Log.Info("历史库降级打开失败：" + degraded.Message);
+                }
+
                 return;
             }
 

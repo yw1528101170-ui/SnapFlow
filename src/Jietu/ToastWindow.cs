@@ -43,6 +43,13 @@ public sealed class ToastWindow : IDisposable, IToastSink
     private int _anchorBottom;
     private float _width;
     private float _widthTarget = 200f;
+
+    // 液态玻璃：提示窗背后的画面抓屏模糊后贴进胶囊（与 OSD 同一套 ScreenGlass）。
+    // 合成一次十几毫秒，按 GlassRefreshMs 节流 + 内容签名比对 + 失败退避。
+    private ScreenGlass? _glass;
+    private long _glassAt;
+    private int _glassFailedStreak;
+    private const long GlassRefreshMs = 140;
     private float _widthVelocity;
     private float _presence;
     private float _presenceTarget;
@@ -256,6 +263,9 @@ public sealed class ToastWindow : IDisposable, IToastSink
                 _width = _widthTarget;
                 _widthVelocity = 0f;
                 _spin = 0f;
+                // 新文案：位置/宽度都会变，强制下一帧重新合成玻璃
+                _glassAt = 0;
+                _glassFailedStreak = 0;
             }
             else
             {
@@ -427,7 +437,11 @@ public sealed class ToastWindow : IDisposable, IToastSink
         }
 
         var state = new ToastRenderer.State(_message, _kind, _busy, _width, _presence, _spin);
-        ToastRenderer.Draw(_canvas.Graphics, _scale, state, w, h);
+
+        // 液态玻璃：合成胶囊正下方那块屏幕（全圆角 + 重磨砂 + 镜面亮边烘焙进图）。
+        // 失败（锁屏 / UAC / 全黑壁纸）时退回不透明深色胶囊，视觉不破。
+        IntPtr glass = UpdateGlass(state, w, h);
+        ToastRenderer.Draw(_canvas.Graphics, _scale, state, w, h, glass);
 
         float pad = ToastRenderer.ShadowPadDip * _scale;
         float rise = ToastRenderer.RiseDip * _scale;
@@ -445,6 +459,55 @@ public sealed class ToastWindow : IDisposable, IToastSink
                 NativeMethods.SwpNoActivate | NativeMethods.SwpShowWindow);
             IsVisible = true;
         }
+    }
+
+    /// <summary>
+    /// 按 140ms 节流合成提示窗背后的液态玻璃（与 OSD 的 UpdateGlass 同一条纪律：
+    /// 失败推进时间基点指数退避，成功重置）。返回玻璃图像；IntPtr.Zero 走兜底材质。
+    /// </summary>
+    private IntPtr UpdateGlass(in ToastRenderer.State state, float bufferW, float bufferH)
+    {
+        // 入场/出场动画期间透明度还没起来（或已散场），没必要抓屏
+        if (_presence <= 0.05f)
+        {
+            return IntPtr.Zero;
+        }
+
+        _glass ??= new ScreenGlass();
+
+        float pad = ToastRenderer.ShadowPadDip * _scale;
+        float rise = ToastRenderer.RiseDip * _scale;
+        float capH = ToastRenderer.CapsuleHeightDip * _scale;
+        float capW = MathF.Max(state.Width, 40f * _scale);
+        float offsetY = (1f - state.Presence) * rise;
+        int bufferX = _anchorRight - (int)MathF.Ceiling(bufferW) + (int)MathF.Round(pad);
+        int bufferY = _anchorBottom - (int)MathF.Ceiling(bufferH) + (int)MathF.Round(pad + rise);
+        // ToastRenderer.Draw 里胶囊右对齐于缓冲区、顶部带入场位移
+        int capX = bufferX + (int)MathF.Round(bufferW - pad - capW);
+        int capY = bufferY + (int)MathF.Round(pad + offsetY);
+
+        long now = Environment.TickCount64;
+        if (now - _glassAt >= GlassRefreshMs)
+        {
+            var result = _glass.Compose(
+                capX, capY, (int)MathF.Ceiling(capW), (int)MathF.Ceiling(capH),
+                GlassSurface.LensWidth(_scale), GlassSurface.BlurRadius(_scale, capH), 0.45f,
+                capH * 0.5f, _scale, topRounded: true);
+            if (result != ScreenGlass.Result.Failed)
+            {
+                _glassAt = now;
+                _glassFailedStreak = 0;
+            }
+            else
+            {
+                // 失败（锁屏 / UAC / 全黑壁纸）也要推进时间基点并指数退避：
+                // 不推进的话动画期间每个渲染帧都会重试一次 BitBlt + 模糊合成
+                _glassFailedStreak = Math.Min(_glassFailedStreak + 1, 6);
+                _glassAt = now - GlassRefreshMs + (GlassRefreshMs << _glassFailedStreak);
+            }
+        }
+
+        return _glass.Image;
     }
 
     private void HideInternal()
@@ -478,6 +541,7 @@ public sealed class ToastWindow : IDisposable, IToastSink
 
         _canvas.Dispose();
         _probe.Dispose();
+        _glass?.Dispose();
         if (_gdiplusToken != 0)
         {
             OverlayGdi.GdiplusShutdown(_gdiplusToken);

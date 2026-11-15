@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Window
     x:Class="Jietu.ImageViewerWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -72,15 +72,15 @@
             <StackPanel Orientation="Horizontal" Spacing="2">
                 <Button x:Name="ZoomOutButton" Style="{StaticResource ViewerToolStyle}" Click="OnZoomOut"
                         ToolTipService.ToolTip="缩小 (滚轮)"><TextBlock Text="−" FontSize="15" FontWeight="SemiBold"/></Button>
-                <TextBlock x:Name="ZoomText" Text="100%" Width="46" TextAlignment="Center" FontSize="11"
+                <TextBlock x:Name="ZoomText" Text="100%" Width="46" TextAlignment="Center" FontSize="11.5"
                            VerticalAlignment="Center" Foreground="#CCFFFFFF"/>
                 <Button x:Name="ZoomInButton" Style="{StaticResource ViewerToolStyle}" Click="OnZoomIn"
                         ToolTipService.ToolTip="放大 (滚轮)"><TextBlock Text="＋" FontSize="14" FontWeight="SemiBold"/></Button>
                 <Rectangle Width="1" Height="14" Margin="6,0" Fill="#26FFFFFF"/>
                 <Button x:Name="FitButton" Style="{StaticResource ViewerToolStyle}" Click="OnFitClick"
-                        ToolTipService.ToolTip="适应窗口 (双击切换)"><TextBlock Text="适应" FontSize="11"/></Button>
+                        ToolTipService.ToolTip="适应窗口 (双击切换)"><TextBlock Text="适应" FontSize="11.5"/></Button>
                 <Button x:Name="ActualButton" Style="{StaticResource ViewerToolStyle}" Click="OnActualClick"
-                        ToolTipService.ToolTip="按原始像素显示"><TextBlock Text="1:1" FontSize="11"/></Button>
+                        ToolTipService.ToolTip="按原始像素显示"><TextBlock Text="1:1" FontSize="11.5"/></Button>
             </StackPanel>
         </Border>
     </Grid>

@@ -178,10 +178,25 @@ public sealed class VaultSaveScheduler : IDisposable
         {
         }
 
+        // 先取消再释放：若 Pump 正在 await 写盘，恢复后循环条件会读这个 CTS。
+        // 只 Dispose 不 Cancel 会让在飞的 async void Pump 在已释放 CTS 上抛
+        // ObjectDisposedException，异常逃出 async void 直接崩进程。
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
         _cts.Dispose();
     }
 
     /// <summary>单飞泵：同一时刻只有一个实例在跑，循环直到版本号稳定。</summary>
+    /// <remarks>
+    /// async void：由防抖 Timer / FlushAsync 触发，无法 await。
+    /// 因此循环体最外层必须有 catch 兜底——任何异常逃出 async void 都是进程级崩溃。
+    /// </remarks>
     private async void Pump()
     {
         if (Interlocked.CompareExchange(ref _inFlight, 1, 0) != 0)
@@ -192,7 +207,7 @@ public sealed class VaultSaveScheduler : IDisposable
 
         try
         {
-            while (!_cts.IsCancellationRequested && !_disposed)
+            while (!_disposed && !_cts.IsCancellationRequested)
             {
                 var version = Interlocked.Read(ref _dirtyVersion);
                 if (version <= Interlocked.Read(ref _savedVersion))
@@ -239,6 +254,14 @@ public sealed class VaultSaveScheduler : IDisposable
                     break;
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            // async void 兜底：循环条件/SetState 等循环体之外的最外层异常
+            // （如退出竞态中触碰已释放资源）不允许逃出 async void 崩进程。
+            Log.Error(ex);
+            LastError = VaultMessages.SaveFailed;
+            SetState(VaultSaveState.Failed, LastError);
         }
         finally
         {

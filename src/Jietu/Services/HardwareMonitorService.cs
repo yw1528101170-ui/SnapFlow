@@ -63,6 +63,7 @@ public sealed class HardwareMonitorService : IDisposable
     private bool _useNvml;
     private bool _initialized;
     private readonly int _intervalMs;
+    private int _ticking;
 
     public HardwareMonitorService(int intervalMs = 1000)
     {
@@ -130,7 +131,8 @@ public sealed class HardwareMonitorService : IDisposable
                 SnapshotCpu();
                 SnapshotNet();
                 _servicePdh?.Collect();
-                _timer.Change(100, _intervalMs);
+                // 自排程模式：只触发一次，由 OnTick 末尾续约（见 OnTick 注释）。
+                _timer.Change(100, Timeout.Infinite);
             }
             else
             {
@@ -142,6 +144,15 @@ public sealed class HardwareMonitorService : IDisposable
     private void OnTick(object? state)
     {
         if (_disposed || !_enabled) return;
+        // 自排程 + 重入哨兵：周期触发模式下采样偶发超过间隔（PDH/GPU 卡顿）时
+        // 两个回调会并发执行——同一 PdhQuery 并发 Collect 非线程安全，
+        // PdhArrayBuffer 的 FreeHGlobal/重分配与共享可变状态同样会踩踏。
+        // 改为"跑完一次再续约"，从根上消除重入。
+        if (Interlocked.CompareExchange(ref _ticking, 1, 0) != 0)
+        {
+            return;
+        }
+
         try
         {
             var metrics = Sample();
@@ -150,6 +161,14 @@ public sealed class HardwareMonitorService : IDisposable
         catch (Exception ex)
         {
             Log.Error("HardwareMonitor sampling error: " + ex.Message);
+        }
+        finally
+        {
+            Volatile.Write(ref _ticking, 0);
+            if (!_disposed && _enabled)
+            {
+                _timer.Change(_intervalMs, Timeout.Infinite);
+            }
         }
     }
 
@@ -502,7 +521,15 @@ public sealed class HardwareMonitorService : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        _timer.Dispose();
+        // 先停轮询并等在飞回调真正退出，再释放 PDH/NVML 等原生资源：
+        // 否则回调可能正拿着这些指针做 P/Invoke（NVML 委托在 NativeLibrary.Free
+        // 之后是悬垂函数指针），退出时直接 AV。等待上限放宽到 2 个采样周期加余量。
+        using var done = new ManualResetEventSlim(false, spinCount: 0);
+        if (_timer.Dispose(done.WaitHandle) && !done.Wait(2500))
+        {
+            Log.Info("HardwareMonitor 退出等待在飞采样回调超时");
+        }
+
         _nvml.Dispose();
         _dxgiPdh.Dispose();
         _servicePdh?.Dispose();
@@ -729,6 +756,7 @@ internal sealed class DxgiPdhGpuAdapter : IDisposable
 
     private readonly List<GpuAdapterInfo> _adapters = new();
     private ulong _primaryLuid;
+    private ulong? _chosenGpuLuid;
     private string _gpuName = "GPU";
     private ulong _totalVram;
     private PdhQuery? _pdhQuery;
@@ -869,8 +897,10 @@ internal sealed class DxgiPdhGpuAdapter : IDisposable
             }
 
             UpdateUsageEwma(usageByLuid);
-            // 显示值用原始瞬时利用率（UI 层已有指数平滑），EWMA 只用于选卡的防抖
-            var chosenLuid = HardwareMonitorLogic.SelectGpuAdapter(_primaryLuid, _usageEwma);
+            // 显示值用原始瞬时利用率（UI 层已有指数平滑），EWMA 只用于选卡的防抖。
+            // 记住上次选卡结果传给下一轮，形成不对称迟滞，防止阈值附近逐秒来回跳。
+            var chosenLuid = HardwareMonitorLogic.SelectGpuAdapter(_primaryLuid, _usageEwma, _chosenGpuLuid);
+            _chosenGpuLuid = chosenLuid;
             var chosen = AdapterByLuid(chosenLuid) ?? AdapterByLuid(_primaryLuid);
             if (chosen == null)
             {

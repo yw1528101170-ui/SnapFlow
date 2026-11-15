@@ -1,7 +1,8 @@
 ﻿<Application
     x:Class="Jietu.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:primitives="using:Microsoft.UI.Xaml.Controls.Primitives">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -11,137 +12,331 @@
             <ResourceDictionary.ThemeDictionaries>
                 <!-- 深色模式主题资源 -->
                 <ResourceDictionary x:Key="Default">
-                    <SolidColorBrush x:Key="SnapFlowToolbarBgBrush" Color="#EB202023"/>
-                    <SolidColorBrush x:Key="SnapFlowToolbarBorderBrush" Color="#28FFFFFF"/>
+                    <!-- 深色模式的同一套色板：底色往青冷那边偏一点（#1A1E24 / #161A1F），
+                         所有「白色描边」都换成带蓝的 #DCE6F2 低透明度，玻璃才是冷的而不是灰的 -->
+                    <SolidColorBrush x:Key="SnapFlowToolbarBgBrush" Color="#EB1C2027"/>
+                    <SolidColorBrush x:Key="SnapFlowToolbarBorderBrush" Color="#28DCE6F2"/>
                     <SolidColorBrush x:Key="SnapFlowToolbarShadowBrush" Color="#66000000"/>
-                    <SolidColorBrush x:Key="SnapFlowToolGlyphBrush" Color="#E5E5E5"/>
-                    <SolidColorBrush x:Key="SnapFlowToolHoverBgBrush" Color="#20FFFFFF"/>
-                    <SolidColorBrush x:Key="SnapFlowToolPressedBgBrush" Color="#30FFFFFF"/>
-                    <SolidColorBrush x:Key="SnapFlowDividerBrush" Color="#22FFFFFF"/>
-                    <SolidColorBrush x:Key="SnapFlowCardBorderBrush" Color="#22FFFFFF"/>
+                    <SolidColorBrush x:Key="SnapFlowToolGlyphBrush" Color="#E4EAF2"/>
+                    <SolidColorBrush x:Key="SnapFlowToolHoverBgBrush" Color="#1EDCE6F2"/>
+                    <SolidColorBrush x:Key="SnapFlowToolPressedBgBrush" Color="#2EDCE6F2"/>
+                    <SolidColorBrush x:Key="SnapFlowDividerBrush" Color="#22DCE6F2"/>
+                    <SolidColorBrush x:Key="SnapFlowCardBorderBrush" Color="#22DCE6F2"/>
+
+                    <!-- 卡片一圈立体边：顶边亮、底边回一点光，像一块被磨圆的玻璃片 -->
+                    <LinearGradientBrush x:Key="GlassCardStrokeBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#4DDCE6F2" Offset="0"/>
+                        <GradientStop Color="#1ADCE6F2" Offset="0.35"/>
+                        <GradientStop Color="#2EDCE6F2" Offset="1"/>
+                    </LinearGradientBrush>
 
                     <!-- 剪贴板历史：Apple 风格的玻璃层级色板（深色） -->
-                    <SolidColorBrush x:Key="HistFieldFillBrush" Color="#14FFFFFF"/>
-                    <SolidColorBrush x:Key="HistFieldStrokeBrush" Color="#1FFFFFFF"/>
+                    <SolidColorBrush x:Key="HistFieldFillBrush" Color="#14DCE6F2"/>
+                    <SolidColorBrush x:Key="HistFieldStrokeBrush" Color="#1FDCE6F2"/>
                     <SolidColorBrush x:Key="HistFocusRingBrush" Color="#B32D6EFA"/>
-                    <SolidColorBrush x:Key="HistRowHoverBrush" Color="#12FFFFFF"/>
-                    <SolidColorBrush x:Key="HistRowStrokeBrush" Color="#17FFFFFF"/>
+                    <SolidColorBrush x:Key="HistRowHoverBrush" Color="#12DCE6F2"/>
+                    <SolidColorBrush x:Key="HistRowStrokeBrush" Color="#17DCE6F2"/>
                     <SolidColorBrush x:Key="HistSelectionFillBrush" Color="#292D6EFA"/>
                     <SolidColorBrush x:Key="HistSelectionStrokeBrush" Color="#4A2D6EFA"/>
-                    <SolidColorBrush x:Key="HistSegmentTrackBrush" Color="#1AFFFFFF"/>
-                    <SolidColorBrush x:Key="HistSegmentThumbBrush" Color="#3DFFFFFF"/>
+                    <SolidColorBrush x:Key="HistSegmentTrackBrush" Color="#1ADCE6F2"/>
+                    <SolidColorBrush x:Key="HistSegmentThumbBrush" Color="#3DDCE6F2"/>
                     <SolidColorBrush x:Key="HistBadgeFillBrush" Color="#1F2D6EFA"/>
-                    <SolidColorBrush x:Key="HistThumbFillBrush" Color="#14FFFFFF"/>
-                    <SolidColorBrush x:Key="HistPanelFillBrush" Color="#E61B1B1E"/>
-                    <SolidColorBrush x:Key="HistDividerBrush" Color="#17FFFFFF"/>
-                    <SolidColorBrush x:Key="HistEdgeBrush" Color="#1AFFFFFF"/>
+                    <SolidColorBrush x:Key="HistThumbFillBrush" Color="#14DCE6F2"/>
+                    <LinearGradientBrush x:Key="HistPanelFillBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#F21F2630" Offset="0"/>
+                        <GradientStop Color="#D9181C21" Offset="1"/>
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="HistDividerBrush" Color="#17DCE6F2"/>
+                    <SolidColorBrush x:Key="HistEdgeBrush" Color="#1ADCE6F2"/>
 
-                    <!-- 设置中枢：Apple 风格侧栏 / 内嵌分组卡片（深色） -->
-                    <SolidColorBrush x:Key="SetPaneFillBrush" Color="#F2262629"/>
-                    <SolidColorBrush x:Key="SetContentFillBrush" Color="#F21C1C1E"/>
-                    <SolidColorBrush x:Key="SetPaneEdgeBrush" Color="#1FFFFFFF"/>
-                    <SolidColorBrush x:Key="SetCardFillBrush" Color="#17FFFFFF"/>
-                    <SolidColorBrush x:Key="SetCardStrokeBrush" Color="#1AFFFFFF"/>
-                    <SolidColorBrush x:Key="SetRowHoverBrush" Color="#0AFFFFFF"/>
+                    <!-- 窗口一圈亮边：四边等强度。玻璃图自己已经带一圈亮棱，这层只把接缝压实，
+                         别按纵向渐变上亮下淡——那样右边会被读成「缺一条」 -->
+                    <SolidColorBrush x:Key="HistEdgeStrokeBrush" Color="#30DCE6F2"/>
+
+                    <!-- 真玻璃已由抓屏引擎铺在底层，这里只留一层很薄的冷雾压对比 -->
+                    <LinearGradientBrush x:Key="GlassVeilBrush" StartPoint="0,0" EndPoint="0,0.85">
+                        <GradientStop Color="#3A1B2027" Offset="0"/>
+                        <GradientStop Color="#30171B21" Offset="0.55"/>
+                        <GradientStop Color="#2814181D" Offset="1"/>
+                    </LinearGradientBrush>
+
+                    <!-- 顶部反光：窗口最上面那道从左上扫进来的光，越往下越淡 -->
+                    <LinearGradientBrush x:Key="GlassTopSheenBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#21DCE6F2" Offset="0"/>
+                        <GradientStop Color="#0FDCE6F2" Offset="0.35"/>
+                        <GradientStop Color="#00DCE6F2" Offset="1"/>
+                    </LinearGradientBrush>
+
+                    <!-- 设置中枢：Apple 风格侧栏 / 内嵌分组卡片（深色）。
+                         玻璃底进来以后侧栏与内容区都调薄：只留一点层次差，让抓屏玻璃透上来 -->
+                    <LinearGradientBrush x:Key="SetPaneFillBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#2E242A32" Offset="0"/>
+                        <GradientStop Color="#24191D22" Offset="1"/>
+                    </LinearGradientBrush>
+                    <LinearGradientBrush x:Key="SetContentFillBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#221D232A" Offset="0"/>
+                        <GradientStop Color="#1A171B20" Offset="1"/>
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="SetPaneEdgeBrush" Color="#1FDCE6F2"/>
+                    <!-- 卡片面：淡底卡片的路子，只比 note 浓一倍 -->
+                    <SolidColorBrush x:Key="SetCardFillBrush" Color="#1ADCE6F2"/>
+                    <LinearGradientBrush x:Key="SetCardStrokeBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#59DCE6F2" Offset="0"/>
+                        <GradientStop Color="#1ADCE6F2" Offset="0.22"/>
+                        <GradientStop Color="#26DCE6F2" Offset="1"/>
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="SetRowHoverBrush" Color="#0ADCE6F2"/>
                     <SolidColorBrush x:Key="SetIconTileFillBrush" Color="#212D6EFA"/>
-                    <SolidColorBrush x:Key="SetNoteFillBrush" Color="#0FFFFFFF"/>
+                    <SolidColorBrush x:Key="SetNoteFillBrush" Color="#0FDCE6F2"/>
 
                     <!-- 快捷键按钮全套状态：默认/悬停/按下/录制/键帽（深色） -->
-                    <SolidColorBrush x:Key="HotkeyFillBrush" Color="#14FFFFFF"/>
-                    <SolidColorBrush x:Key="HotkeyFillHoverBrush" Color="#22FFFFFF"/>
-                    <SolidColorBrush x:Key="HotkeyFillPressedBrush" Color="#0DFFFFFF"/>
-                    <SolidColorBrush x:Key="HotkeyStrokeBrush" Color="#26FFFFFF"/>
-                    <SolidColorBrush x:Key="HotkeyStrokeHoverBrush" Color="#4DFFFFFF"/>
-                    <SolidColorBrush x:Key="HotkeyStrokePressedBrush" Color="#33FFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyFillBrush" Color="#14DCE6F2"/>
+                    <SolidColorBrush x:Key="HotkeyFillHoverBrush" Color="#22DCE6F2"/>
+                    <SolidColorBrush x:Key="HotkeyFillPressedBrush" Color="#0DDCE6F2"/>
+                    <SolidColorBrush x:Key="HotkeyStrokeBrush" Color="#26DCE6F2"/>
+                    <SolidColorBrush x:Key="HotkeyStrokeHoverBrush" Color="#4DDCE6F2"/>
+                    <SolidColorBrush x:Key="HotkeyStrokePressedBrush" Color="#33DCE6F2"/>
                     <SolidColorBrush x:Key="HotkeyRecordingFillBrush" Color="#142D6EFA"/>
                     <SolidColorBrush x:Key="HotkeyRecordingStrokeBrush" Color="#992D6EFA"/>
                     <SolidColorBrush x:Key="HotkeyRecordingGlowBrush" Color="#1F2D6EFA"/>
-                    <SolidColorBrush x:Key="HotkeyKeycapFillBrush" Color="#2EFFFFFF"/>
-                    <SolidColorBrush x:Key="HotkeyKeycapStrokeBrush" Color="#4DFFFFFF"/>
+                    <SolidColorBrush x:Key="HotkeyKeycapFillBrush" Color="#2EDCE6F2"/>
+                    <SolidColorBrush x:Key="HotkeyKeycapStrokeBrush" Color="#4DDCE6F2"/>
 
                     <!-- AI 视觉工作台：玻璃卡片 / 胶囊输入 / 加载骨架（深色） -->
-                    <SolidColorBrush x:Key="AiCardFillBrush" Color="#17FFFFFF"/>
-                    <SolidColorBrush x:Key="AiCardStrokeBrush" Color="#26FFFFFF"/>
-                    <SolidColorBrush x:Key="AiCardHoverStrokeBrush" Color="#38FFFFFF"/>
-                    <SolidColorBrush x:Key="AiInsetFillBrush" Color="#0CFFFFFF"/>
-                    <SolidColorBrush x:Key="AiChipFillBrush" Color="#12FFFFFF"/>
-                    <SolidColorBrush x:Key="AiChipStrokeBrush" Color="#1AFFFFFF"/>
-                    <SolidColorBrush x:Key="AiInputFillBrush" Color="#1AFFFFFF"/>
-                    <SolidColorBrush x:Key="AiInputStrokeBrush" Color="#26FFFFFF"/>
-                    <SolidColorBrush x:Key="AiSkeletonBrush" Color="#1FFFFFFF"/>
-                    <SolidColorBrush x:Key="AiEdgeBrush" Color="#1AFFFFFF"/>
-                    <SolidColorBrush x:Key="AiSheenBrush" Color="#0FFFFFFF"/>
-                    <SolidColorBrush x:Key="AiSegmentTrackBrush" Color="#14FFFFFF"/>
+                    <SolidColorBrush x:Key="AiCardFillBrush" Color="#17DCE6F2"/>
+                    <SolidColorBrush x:Key="AiCardStrokeBrush" Color="#26DCE6F2"/>
+                    <SolidColorBrush x:Key="AiCardHoverStrokeBrush" Color="#3DDCE6F2"/>
+                    <SolidColorBrush x:Key="AiInsetFillBrush" Color="#0CDCE6F2"/>
+                    <SolidColorBrush x:Key="AiChipFillBrush" Color="#12DCE6F2"/>
+                    <SolidColorBrush x:Key="AiChipStrokeBrush" Color="#1ADCE6F2"/>
+                    <SolidColorBrush x:Key="AiInputFillBrush" Color="#1ADCE6F2"/>
+                    <SolidColorBrush x:Key="AiInputStrokeBrush" Color="#26DCE6F2"/>
+                    <SolidColorBrush x:Key="AiSkeletonBrush" Color="#1FDCE6F2"/>
+                    <SolidColorBrush x:Key="AiEdgeBrush" Color="#1ADCE6F2"/>
+                    <SolidColorBrush x:Key="AiSheenBrush" Color="#0FDCE6F2"/>
+                    <SolidColorBrush x:Key="AiSegmentTrackBrush" Color="#14DCE6F2"/>
                     <SolidColorBrush x:Key="AiGlowBrush" Color="#332D6EFA"/>
                     <SolidColorBrush x:Key="AiWindowBaseBrush" Color="#1F000000"/>
-                    <SolidColorBrush x:Key="AiSegmentHoverBrush" Color="#1FFFFFFF"/>
+                    <SolidColorBrush x:Key="AiSegmentHoverBrush" Color="#1FDCE6F2"/>
+
+                    <!-- 系统控件底（深色）：薄白面，和浅色同一套思路 -->
+                    <SolidColorBrush x:Key="ControlFillColorDefaultBrush" Color="#1ADCE6F2"/>
+                    <SolidColorBrush x:Key="ControlFillColorSecondaryBrush" Color="#14DCE6F2"/>
+                    <SolidColorBrush x:Key="ControlFillColorTertiaryBrush" Color="#10DCE6F2"/>
+                    <SolidColorBrush x:Key="ControlFillColorQuarternaryBrush" Color="#0CDCE6F2"/>
+                    <SolidColorBrush x:Key="ControlFillColorDisabledBrush" Color="#08DCE6F2"/>
+                    <SolidColorBrush x:Key="TextControlBackground" Color="#1ADCE6F2"/>
+                    <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#21DCE6F2"/>
+                    <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#26DCE6F2"/>
+                    <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#08DCE6F2"/>
+                    <!-- 按钮与下拉（深色）：同样的独立 key -->
+                    <SolidColorBrush x:Key="ButtonBackground" Color="#1ADCE6F2"/>
+                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#21DCE6F2"/>
+                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#16DCE6F2"/>
+                    <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#08DCE6F2"/>
+                    <SolidColorBrush x:Key="ButtonBorderBrush" Color="#1FDCE6F2"/>
+                    <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#29DCE6F2"/>
+                    <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#29DCE6F2"/>
+                    <SolidColorBrush x:Key="ComboBoxBackground" Color="#1ADCE6F2"/>
+                    <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#21DCE6F2"/>
+                    <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#16DCE6F2"/>
+                    <SolidColorBrush x:Key="ComboBoxBackgroundFocused" Color="#26DCE6F2"/>
+                    <SolidColorBrush x:Key="ComboBoxBackgroundDisabled" Color="#08DCE6F2"/>
+                    <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#1FDCE6F2"/>
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#29DCE6F2"/>
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#29DCE6F2"/>
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushFocused" Color="#40DCE6F2"/>
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushDisabled" Color="#08DCE6F2"/>
+                    <SolidColorBrush x:Key="GlassCtlStrokeBrush" Color="#0FDCE6F2"/>
+                    <!-- 下拉弹层（深色）：ComboBox 弹出层走框架自己的 key，默认是实心面板色，
+                         盖在玻璃上就是一块白板；改用与 Flyout 同源的玻璃面 -->
+                    <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#EE1B2027"/>
+                    <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#2EDCE6F2"/>
+                    <!-- 输入框聚焦描边：背景不随聚焦变化，焦点感全靠这一圈 -->
+                    <SolidColorBrush x:Key="GlassBoxFocusStrokeBrush" Color="#55DCE6F2"/>
+                    <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="#1ADCE6F2"/>
+                    <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver" Color="#21DCE6F2"/>
+                    <SolidColorBrush x:Key="ExpanderHeaderBackgroundPressed" Color="#16DCE6F2"/>
+                    <SolidColorBrush x:Key="ExpanderContentBackground" Color="Transparent"/>
+                    <SolidColorBrush x:Key="ExpanderBorderBrush" Color="#0FDCE6F2"/>
+                    <!-- 开关 OFF 轨道：必须比玻璃底深一截，纯白滑块放上去才读得出「关」；
+                         之前的 15% 白在浅色玻璃底上整颗开关糊成一片，状态不可辨 -->
+                    <SolidColorBrush x:Key="ToggleTrackOffBrush" Color="#40DCE6F2"/>
+                    <SolidColorBrush x:Key="ToggleThumbBrush" Color="#E6DCE6F2"/>
+                    <SolidColorBrush x:Key="GlassFlyoutFillBrush" Color="#EE1B2027"/>
+                    <SolidColorBrush x:Key="GlassFlyoutStrokeBrush" Color="#2EDCE6F2"/>
+                    <SolidColorBrush x:Key="ComboItemSelectedFaceBrush" Color="#4A2D6EFA"/>
                 </ResourceDictionary>
-                <!-- 浅色模式主题资源 -->
+                <!-- 浅色模式主题资源：冷雾玻璃。
+                     和屏幕顶部那块液态玻璃 OSD 用同一套色：卡面 #F5FBFDFF→#D8DFE9F5、
+                     单根细线描边 #222A36、数据层托底 #1A2230、墨色文字 #101319。
+                     凡是「大块底色」都留一点透明度，让 Mica 的壁纸从底下透上来，才有玻璃感；
+                     凡是「线」都只用一根，从不在同一条边上叠第二道（叠了就是两条平行边）。 -->
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="SnapFlowToolbarBgBrush" Color="#F4FFFFFF"/>
-                    <SolidColorBrush x:Key="SnapFlowToolbarBorderBrush" Color="#1F000000"/>
+                    <SolidColorBrush x:Key="SnapFlowToolbarBgBrush" Color="#F2FAFDFF"/>
+                    <SolidColorBrush x:Key="SnapFlowToolbarBorderBrush" Color="#2A222A36"/>
                     <SolidColorBrush x:Key="SnapFlowToolbarShadowBrush" Color="#16000000"/>
-                    <SolidColorBrush x:Key="SnapFlowToolGlyphBrush" Color="#383838"/>
-                    <SolidColorBrush x:Key="SnapFlowToolHoverBgBrush" Color="#12000000"/>
-                    <SolidColorBrush x:Key="SnapFlowToolPressedBgBrush" Color="#22000000"/>
-                    <SolidColorBrush x:Key="SnapFlowDividerBrush" Color="#18000000"/>
-                    <SolidColorBrush x:Key="SnapFlowCardBorderBrush" Color="#14000000"/>
+                    <SolidColorBrush x:Key="SnapFlowToolGlyphBrush" Color="#1F242B"/>
+                    <SolidColorBrush x:Key="SnapFlowToolHoverBgBrush" Color="#0E1A2230"/>
+                    <SolidColorBrush x:Key="SnapFlowToolPressedBgBrush" Color="#1C1A2230"/>
+                    <SolidColorBrush x:Key="SnapFlowDividerBrush" Color="#14222A36"/>
+                    <SolidColorBrush x:Key="SnapFlowCardBorderBrush" Color="#26222A36"/>
 
                     <!-- 剪贴板历史：Apple 风格的玻璃层级色板（浅色） -->
-                    <SolidColorBrush x:Key="HistFieldFillBrush" Color="#0F000000"/>
-                    <SolidColorBrush x:Key="HistFieldStrokeBrush" Color="#14000000"/>
+                    <SolidColorBrush x:Key="HistFieldFillBrush" Color="#0C1A2230"/>
+                    <SolidColorBrush x:Key="HistFieldStrokeBrush" Color="#1412181F"/>
+                    <LinearGradientBrush x:Key="GlassCardStrokeBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#66FFFFFF" Offset="0"/>
+                        <GradientStop Color="#26FFFFFF" Offset="0.35"/>
+                        <GradientStop Color="#40FFFFFF" Offset="1"/>
+                    </LinearGradientBrush>
                     <SolidColorBrush x:Key="HistFocusRingBrush" Color="#B32D6EFA"/>
-                    <SolidColorBrush x:Key="HistRowHoverBrush" Color="#0A000000"/>
-                    <SolidColorBrush x:Key="HistRowStrokeBrush" Color="#10000000"/>
-                    <SolidColorBrush x:Key="HistSelectionFillBrush" Color="#242D6EFA"/>
+                    <SolidColorBrush x:Key="HistRowHoverBrush" Color="#0A1A2230"/>
+                    <SolidColorBrush x:Key="HistRowStrokeBrush" Color="#1412181F"/>
+                    <SolidColorBrush x:Key="HistSelectionFillBrush" Color="#222D6EFA"/>
                     <SolidColorBrush x:Key="HistSelectionStrokeBrush" Color="#3D2D6EFA"/>
-                    <SolidColorBrush x:Key="HistSegmentTrackBrush" Color="#0D000000"/>
-                    <SolidColorBrush x:Key="HistSegmentThumbBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="HistSegmentTrackBrush" Color="#14182028"/>
+                    <SolidColorBrush x:Key="HistSegmentThumbBrush" Color="#E6F2F7FB"/>
                     <SolidColorBrush x:Key="HistBadgeFillBrush" Color="#172D6EFA"/>
-                    <SolidColorBrush x:Key="HistThumbFillBrush" Color="#0A000000"/>
-                    <SolidColorBrush x:Key="HistPanelFillBrush" Color="#F7FFFFFF"/>
-                    <SolidColorBrush x:Key="HistDividerBrush" Color="#12000000"/>
-                    <SolidColorBrush x:Key="HistEdgeBrush" Color="#14000000"/>
+                    <SolidColorBrush x:Key="HistThumbFillBrush" Color="#081A2230"/>
+                    <LinearGradientBrush x:Key="HistPanelFillBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#FAFDFFFF" Offset="0"/>
+                        <GradientStop Color="#EFF6FBFE" Offset="0.16"/>
+                        <GradientStop Color="#E3ECF3F8" Offset="1"/>
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="HistDividerBrush" Color="#14222A36"/>
+                    <SolidColorBrush x:Key="HistEdgeBrush" Color="#1A222A36"/>
 
-                    <!-- 设置中枢：Apple 风格侧栏 / 内嵌分组卡片（浅色） -->
-                    <SolidColorBrush x:Key="SetPaneFillBrush" Color="#F2EAEDF1"/>
-                    <SolidColorBrush x:Key="SetContentFillBrush" Color="#F6F8FAFC"/>
-                    <SolidColorBrush x:Key="SetPaneEdgeBrush" Color="#14000000"/>
-                    <SolidColorBrush x:Key="SetCardFillBrush" Color="#FFFFFFFF"/>
-                    <SolidColorBrush x:Key="SetCardStrokeBrush" Color="#12000000"/>
-                    <SolidColorBrush x:Key="SetRowHoverBrush" Color="#08000000"/>
+                    <!-- 一圈等强度亮边（浅色） -->
+                    <SolidColorBrush x:Key="HistEdgeStrokeBrush" Color="#28FFFFFF"/>
+
+                    <LinearGradientBrush x:Key="GlassVeilBrush" StartPoint="0,0" EndPoint="0,0.85">
+                        <GradientStop Color="#26F4F8FC" Offset="0"/>
+                        <GradientStop Color="#1FEDF2F9" Offset="0.55"/>
+                        <GradientStop Color="#17E6EDF4" Offset="1"/>
+                    </LinearGradientBrush>
+
+                    <LinearGradientBrush x:Key="GlassTopSheenBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#40FFFFFF" Offset="0"/>
+                        <GradientStop Color="#1FFFFFFF" Offset="0.3"/>
+                        <GradientStop Color="#00FFFFFF" Offset="1"/>
+                    </LinearGradientBrush>
+
+                    <!-- 设置中枢：Apple 风格侧栏 / 内嵌分组卡片（浅色）。
+                         抓屏玻璃已经铺在底层，这里的面层只留层次差——再浓就把玻璃盖成白纸 -->
+                    <LinearGradientBrush x:Key="SetPaneFillBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#2BF2F8FC" Offset="0"/>
+                        <GradientStop Color="#22E4ECF3" Offset="1"/>
+                    </LinearGradientBrush>
+                    <LinearGradientBrush x:Key="SetContentFillBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#2CFBFDFF" Offset="0"/>
+                        <GradientStop Color="#22F2F7FC" Offset="0.2"/>
+                        <GradientStop Color="#1AEAF1F8" Offset="1"/>
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="SetPaneEdgeBrush" Color="#1A222A36"/>
+                    <!-- 卡片面：跟「开源许可」那种淡底卡片同一路子，只比它浓一倍（8% 灰）。
+                         卡片就是玻璃上的一层薄灰面 + 一圈亮边，不该再压一层白 -->
+                    <SolidColorBrush x:Key="SetCardFillBrush" Color="#14222A36"/>
+                    <LinearGradientBrush x:Key="SetCardStrokeBrush" StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#8CFFFFFF" Offset="0"/>
+                        <GradientStop Color="#2E222A36" Offset="0.22"/>
+                        <GradientStop Color="#3D222A36" Offset="1"/>
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="SetRowHoverBrush" Color="#0A1A2230"/>
                     <SolidColorBrush x:Key="SetIconTileFillBrush" Color="#162D6EFA"/>
-                    <SolidColorBrush x:Key="SetNoteFillBrush" Color="#07000000"/>
+                    <SolidColorBrush x:Key="SetNoteFillBrush" Color="#0A1A2230"/>
 
-                    <!-- 快捷键按钮全套状态：默认/悬停/按下/录制/键帽（浅色） -->
-                    <SolidColorBrush x:Key="HotkeyFillBrush" Color="#F2FFFFFF"/>
-                    <SolidColorBrush x:Key="HotkeyFillHoverBrush" Color="#FFFFFFFF"/>
-                    <SolidColorBrush x:Key="HotkeyFillPressedBrush" Color="#F2E9EDF4"/>
-                    <SolidColorBrush x:Key="HotkeyStrokeBrush" Color="#1F000000"/>
+                    <!-- 快捷键按钮全套状态：默认/悬停/按下/录制/键帽（浅色）。
+                         一律半透：键帽和按钮也是玻璃上的一片薄面，不能是白纸 -->
+                    <SolidColorBrush x:Key="HotkeyFillBrush" Color="#1FFBFCFF"/>
+                    <SolidColorBrush x:Key="HotkeyFillHoverBrush" Color="#33FBFCFF"/>
+                    <SolidColorBrush x:Key="HotkeyFillPressedBrush" Color="#1FF0F4F8"/>
+                    <SolidColorBrush x:Key="HotkeyStrokeBrush" Color="#26222A36"/>
                     <SolidColorBrush x:Key="HotkeyStrokeHoverBrush" Color="#592D6EFA"/>
                     <SolidColorBrush x:Key="HotkeyStrokePressedBrush" Color="#802D6EFA"/>
                     <SolidColorBrush x:Key="HotkeyRecordingFillBrush" Color="#0D2D6EFA"/>
                     <SolidColorBrush x:Key="HotkeyRecordingStrokeBrush" Color="#992D6EFA"/>
                     <SolidColorBrush x:Key="HotkeyRecordingGlowBrush" Color="#172D6EFA"/>
-                    <SolidColorBrush x:Key="HotkeyKeycapFillBrush" Color="#FFFFFFFF"/>
-                    <SolidColorBrush x:Key="HotkeyKeycapStrokeBrush" Color="#33000000"/>
+                    <SolidColorBrush x:Key="HotkeyKeycapFillBrush" Color="#33FBFCFF"/>
+                    <SolidColorBrush x:Key="HotkeyKeycapStrokeBrush" Color="#33222A36"/>
 
-                    <!-- AI 视觉工作台：玻璃卡片 / 胶囊输入 / 加载骨架（浅色） -->
-                    <SolidColorBrush x:Key="AiCardFillBrush" Color="#F2FFFFFF"/>
-                    <SolidColorBrush x:Key="AiCardStrokeBrush" Color="#1F000000"/>
-                    <SolidColorBrush x:Key="AiCardHoverStrokeBrush" Color="#3D000000"/>
-                    <SolidColorBrush x:Key="AiInsetFillBrush" Color="#0F000000"/>
-                    <SolidColorBrush x:Key="AiChipFillBrush" Color="#0D000000"/>
-                    <SolidColorBrush x:Key="AiChipStrokeBrush" Color="#17000000"/>
-                    <SolidColorBrush x:Key="AiInputFillBrush" Color="#FFFFFFFF"/>
-                    <SolidColorBrush x:Key="AiInputStrokeBrush" Color="#26000000"/>
-                    <SolidColorBrush x:Key="AiSkeletonBrush" Color="#14000000"/>
-                    <SolidColorBrush x:Key="AiEdgeBrush" Color="#14000000"/>
+                    <!-- AI 视觉工作台：玻璃卡片 / 胶囊输入 / 加载骨架（浅色）。
+                         卡片和输入框同样走半透，玻璃要能透上来 -->
+                    <SolidColorBrush x:Key="AiCardFillBrush" Color="#29FBFCFF"/>
+                    <SolidColorBrush x:Key="AiCardStrokeBrush" Color="#26222A36"/>
+                    <SolidColorBrush x:Key="AiCardHoverStrokeBrush" Color="#3D222A36"/>
+                    <SolidColorBrush x:Key="AiInsetFillBrush" Color="#0C1A2230"/>
+                    <SolidColorBrush x:Key="AiChipFillBrush" Color="#0C1A2230"/>
+                    <SolidColorBrush x:Key="AiChipStrokeBrush" Color="#1712181F"/>
+                    <SolidColorBrush x:Key="AiInputFillBrush" Color="#1FFBFCFF"/>
+                    <SolidColorBrush x:Key="AiInputStrokeBrush" Color="#26222A36"/>
+                    <SolidColorBrush x:Key="AiSkeletonBrush" Color="#121A2230"/>
+                    <SolidColorBrush x:Key="AiEdgeBrush" Color="#1A222A36"/>
                     <SolidColorBrush x:Key="AiSheenBrush" Color="#8CFFFFFF"/>
-                    <SolidColorBrush x:Key="AiSegmentTrackBrush" Color="#0F000000"/>
+                    <SolidColorBrush x:Key="AiSegmentTrackBrush" Color="#14182028"/>
                     <SolidColorBrush x:Key="AiGlowBrush" Color="#2E2D6EFA"/>
-                    <SolidColorBrush x:Key="AiWindowBaseBrush" Color="#A6EDF0F4"/>
-                    <SolidColorBrush x:Key="AiSegmentHoverBrush" Color="#A6FFFFFF"/>
+                    <SolidColorBrush x:Key="AiWindowBaseBrush" Color="#2EEDF2F6"/>
+                    <SolidColorBrush x:Key="AiSegmentHoverBrush" Color="#A6FAFCFF"/>
+
+                    <!-- 系统控件底（TextBox / ComboBox / NumberBox / Button）。
+                         这些默认是近乎不透明的白，会把整窗玻璃盖成人造白板；
+                         统一压成半透薄面，控件才和卡片是同一种玻璃语言 -->
+                    <SolidColorBrush x:Key="ControlFillColorDefaultBrush" Color="#1FFBFCFF"/>
+                    <SolidColorBrush x:Key="ControlFillColorSecondaryBrush" Color="#29FBFCFF"/>
+                    <SolidColorBrush x:Key="ControlFillColorTertiaryBrush" Color="#21FBFCFF"/>
+                    <SolidColorBrush x:Key="ControlFillColorQuarternaryBrush" Color="#14FBFCFF"/>
+                    <SolidColorBrush x:Key="ControlFillColorDisabledBrush" Color="#14FBFCFF"/>
+                    <SolidColorBrush x:Key="TextControlBackground" Color="#1FFBFCFF"/>
+                    <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#29FBFCFF"/>
+                    <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#3DFBFCFF"/>
+                    <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#14FBFCFF"/>
+                    <!-- 控件描边（浅色）：白块已经淡到只剩雾，边框也不能再是深灰，否则又变成「白块 + 灰框」 -->
+                    <SolidColorBrush x:Key="ControlStrokeColorDefaultBrush" Color="#1FFFFFFF"/>
+                    <SolidColorBrush x:Key="ControlStrokeColorSecondaryBrush" Color="#2BFFFFFF"/>
+                    <SolidColorBrush x:Key="ControlStrokeColorTertiaryBrush" Color="#1AFFFFFF"/>
+                    <SolidColorBrush x:Key="TextControlBorderBrush" Color="#1FFFFFFF"/>
+                    <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#29FFFFFF"/>
+                    <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#46FFFFFF"/>
+                    <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="#12FFFFFF"/>
+                    <!-- 按钮与下拉（浅色）：系统模板用的是 ButtonBackground / ComboBoxBackground，
+                         不跟 ControlFillColor* 走，必须单独覆盖，否则永远是纯白块 -->
+                    <SolidColorBrush x:Key="ButtonBackground" Color="#1FFBFCFF"/>
+                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#29FBFCFF"/>
+                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#21F0F4F8"/>
+                    <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#12FBFCFF"/>
+                    <SolidColorBrush x:Key="ButtonBorderBrush" Color="#1FFFFFFF"/>
+                    <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#29FFFFFF"/>
+                    <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#29FFFFFF"/>
+                    <SolidColorBrush x:Key="ComboBoxBackground" Color="#1FFBFCFF"/>
+                    <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#29FBFCFF"/>
+                    <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#21FBFCFF"/>
+                    <SolidColorBrush x:Key="ComboBoxBackgroundFocused" Color="#3DFBFCFF"/>
+                    <SolidColorBrush x:Key="ComboBoxBackgroundDisabled" Color="#12FBFCFF"/>
+                    <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#1FFFFFFF"/>
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#29FFFFFF"/>
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#29FFFFFF"/>
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushFocused" Color="#46FFFFFF"/>
+                    <SolidColorBrush x:Key="ComboBoxBorderBrushDisabled" Color="#12FFFFFF"/>
+                    <SolidColorBrush x:Key="GlassCtlStrokeBrush" Color="#0FFFFFFF"/>
+                    <!-- 下拉弹层（浅色）：同深色，弹出层必须跟上玻璃语言，不能是框架默认的实白板 -->
+                    <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#D9FBFCFF"/>
+                    <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#26FFFFFF"/>
+                    <!-- 输入框聚焦描边（浅色）：背景不随聚焦变化，焦点感全靠这一圈品牌蓝 -->
+                    <SolidColorBrush x:Key="GlassBoxFocusStrokeBrush" Color="#662D6EFA"/>
+                    <!-- Expander（密码库「手动配置」那一条）：模板自带一层实白 Header 底，
+                         Background=Transparent 压不住，只能覆盖它自己的 key -->
+                    <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="#1FFBFCFF"/>
+                    <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver" Color="#29FBFCFF"/>
+                    <SolidColorBrush x:Key="ExpanderHeaderBackgroundPressed" Color="#21FBFCFF"/>
+                    <SolidColorBrush x:Key="ExpanderContentBackground" Color="Transparent"/>
+                    <SolidColorBrush x:Key="ExpanderBorderBrush" Color="#0FFFFFFF"/>
+                    <!-- 开关 OFF 轨道（浅色）：玻璃底已经很浅，轨道要用墨灰而不是白，
+                         白轨 + 白滑块在截图里糊成一团，状态完全读不出 -->
+                    <SolidColorBrush x:Key="ToggleTrackOffBrush" Color="#59222A36"/>
+                    <SolidColorBrush x:Key="ToggleThumbBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="GlassFlyoutFillBrush" Color="#D9FBFCFF"/>
+                    <SolidColorBrush x:Key="GlassFlyoutStrokeBrush" Color="#26FFFFFF"/>
+                    <SolidColorBrush x:Key="ComboItemSelectedFaceBrush" Color="#382D6EFA"/>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
@@ -158,6 +353,614 @@
             <SolidColorBrush x:Key="SnapFlowDangerBrush" Color="#EF4444"/>
             <SolidColorBrush x:Key="SnapFlowWarningBrush" Color="#F59E0B"/>
 
+            <!-- 隐式按钮样式：所有没有单独 Style 的按钮统一走玻璃薄面。
+                 系统模板的 ButtonBackground 在本 SDK 版本仍解析成纯白（实测按钮像素 238 vs 卡片 204），
+                 每个视觉状态还会用 ThemeResource 再改一次背景，光设属性压不下来，
+                 所以这里自带一个只动不透明度的模板。
+                 ComboBox / NumberBox 没有可用的默认样式键（写 BasedOn 会在运行期崩），
+                 那两个在 XAML 里逐个显式设 Background。 -->
+            <Style x:Key="GlassButtonFaceStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="Background" Value="{ThemeResource HotkeyFillBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource GlassCtlStrokeBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <!-- 必须自带模板：WinUI 的默认按钮模板在每个视觉状态里用 ThemeResource 改 Background，
+                     那些 Setter 的优先级高于我们给的 Background，光设属性根本压不下来（实测按钮还是 #EEF0F1）。
+                     这里换成一层 Border + ContentPresenter，状态只动不透明度，底色永远由 Background 决定。 -->
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid x:Name="Root" Background="Transparent">
+                                <Border x:Name="Face" CornerRadius="{TemplateBinding CornerRadius}"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"/>
+                                <ContentPresenter x:Name="Presenter" Padding="{TemplateBinding Padding}"
+                                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                  Background="Transparent"/>
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal"/>
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Face.Opacity" Value="0.72"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Face.Opacity" Value="0.5"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="Face.Opacity" Value="0.45"/>
+                                                <Setter Target="Presenter.Opacity" Value="0.6"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                    <VisualStateGroup x:Name="FocusStates">
+                                        <!-- 自带模板会丢掉系统的键盘焦点框，这里补一道蓝圈：
+                                             Tab 导航时按钮必须看得见焦点，否则键盘用户找不到落点 -->
+                                        <VisualState x:Name="Focused">
+                                            <VisualState.Setters>
+                                                <Setter Target="Face.BorderBrush" Value="{ThemeResource HistFocusRingBrush}"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Unfocused"/>
+                                        <VisualState x:Name="PointerFocused"/>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- 隐式样式 + 具名别名，指向同一张脸：新增按钮不用再单独指定 Style -->
+            <Style TargetType="Button" BasedOn="{StaticResource GlassButtonFaceStyle}"/>
+            <Style x:Key="GlassButtonStyle" TargetType="Button" BasedOn="{StaticResource GlassButtonFaceStyle}"/>
+
+            <!-- 主操作按钮：覆盖框架的 AccentButtonStyle 这个 key。
+                 必须覆盖——上面 ButtonBackgroundPointerOver 那组资源接管了系统模板的悬停色，
+                 蓝色主按钮（解锁 / 创建密码库 / 确认清空）一悬停就会变成中性玻璃面；
+                 这里让它走同一张玻璃脸，底色换成品牌蓝，悬停仍是「变淡」而不是换色。 -->
+            <Style x:Key="AccentButtonStyle" TargetType="Button" BasedOn="{StaticResource GlassButtonFaceStyle}">
+                <Setter Property="Background" Value="{ThemeResource SnapFlowAccentBrush}"/>
+                <Setter Property="Foreground" Value="White"/>
+            </Style>
+
+            <!-- 开关：系统 ToggleSwitch 的轨道色同样是框架内的 key，覆盖不动，只能自带模板。
+                 尺寸沿用 iOS 胶囊（44×24，滑块 18），状态只换轨道底与滑块位置。 -->
+            <Style TargetType="ToggleSwitch">
+                <Setter Property="MinWidth" Value="0"/>
+                <Setter Property="HorizontalAlignment" Value="Left"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ToggleSwitch">
+                            <Grid Background="Transparent">
+                                <Grid x:Name="SwitchRoot" Width="44" Height="24"
+                                      HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <!-- 轨道自带一圈发丝边：不管背后是亮玻璃还是暗玻璃，胶囊轮廓都立得住 -->
+                                    <Border x:Name="Track" CornerRadius="{StaticResource RadiusCard}"
+                                            Background="{ThemeResource ToggleTrackOffBrush}"
+                                            BorderBrush="{ThemeResource GlassCtlStrokeBrush}" BorderThickness="1"/>
+                                    <!-- 拖拽行程度量件（宽 38 = 行程 20 + 滑块 18）：控件靠它算滑块平移的 min/max -->
+                                    <Rectangle x:Name="SwitchKnobBounds" Width="38" Height="18" RadiusX="9" RadiusY="9"
+                                               Fill="{x:Null}" Stroke="{x:Null}" IsHitTestVisible="False"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <Grid x:Name="SwitchKnob" Width="18" Height="18"
+                                          HorizontalAlignment="Left" VerticalAlignment="Center" Margin="3,0,3,0">
+                                        <Grid.RenderTransform>
+                                            <TranslateTransform x:Name="KnobTranslateTransform" X="0" Y="0"/>
+                                        </Grid.RenderTransform>
+                                        <!-- 开/关两个滑块面：与官方模板同构，状态切换只换透明度 -->
+                                        <Border x:Name="SwitchKnobOff" CornerRadius="9"
+                                                Background="{ThemeResource ToggleThumbBrush}"
+                                                BorderBrush="#1A10141A" BorderThickness="1"/>
+                                        <Border x:Name="SwitchKnobOn" CornerRadius="9"
+                                                Background="{ThemeResource ToggleThumbBrush}"
+                                                BorderBrush="#1A10141A" BorderThickness="1" Opacity="0"/>
+                                    </Grid>
+                                    <!-- 点击与拖拽面：官方实现把 Tapped→Toggle() 和 DragStarted/Delta/Completed
+                                         全部挂在名为 SwitchThumb 的 Thumb 控件上（盖满整颗开关、模板透明）。
+                                         模板里缺这个部件就是「画得出来但点不动」——点击切换只认它。 -->
+                                    <primitives:Thumb x:Name="SwitchThumb">
+                                        <primitives:Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Rectangle Fill="Transparent"/>
+                                            </ControlTemplate>
+                                        </primitives:Thumb.Template>
+                                    </primitives:Thumb>
+                                </Grid>
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal"/>
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Track.Opacity" Value="0.88"/>
+                                                <Setter Target="SwitchKnobOff.Opacity" Value="0.95"/>
+                                                <Setter Target="SwitchKnobOn.Opacity" Value="0.95"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Track.Opacity" Value="0.75"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <!-- 之前 0.45/0.5 配上淡轨道，禁用的开关在截图里几乎整个消失 -->
+                                                <Setter Target="Track.Opacity" Value="0.55"/>
+                                                <Setter Target="SwitchKnobOff.Opacity" Value="0.62"/>
+                                                <Setter Target="SwitchKnobOn.Opacity" Value="0.62"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                    <VisualStateGroup x:Name="ToggleStates">
+                                        <VisualState x:Name="Off"/>
+                                        <VisualState x:Name="Dragging"/>
+                                        <VisualState x:Name="On">
+                                            <VisualState.Setters>
+                                                <Setter Target="Track.Background" Value="{ThemeResource SnapFlowAccentBrush}"/>
+                                                <!-- 滑块位置走官方同款平移机制：行程 20 = 44 - 18 - 两侧 3px 内衬 -->
+                                                <Setter Target="KnobTranslateTransform.X" Value="20"/>
+                                                <Setter Target="SwitchKnobOn.Opacity" Value="1"/>
+                                                <Setter Target="SwitchKnobOff.Opacity" Value="0"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                    <VisualStateGroup x:Name="FocusStates">
+                                        <!-- Tab 导航到开关时给轨道加一圈蓝边（1px 画在轨道自身范围内，不动布局） -->
+                                        <VisualState x:Name="Focused">
+                                            <VisualState.Setters>
+                                                <Setter Target="Track.BorderBrush" Value="{ThemeResource HistFocusRingBrush}"/>
+                                                <Setter Target="Track.BorderThickness" Value="1"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Unfocused"/>
+                                        <VisualState x:Name="PointerFocused"/>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- 滚动条：系统模板不换（换掉会丢拖动用的 part），只把它收细 + 压淡 -->
+            <Style TargetType="ScrollBar">
+                <Setter Property="Width" Value="8"/>
+                <Setter Property="MinWidth" Value="8"/>
+                <Setter Property="Opacity" Value="0.72"/>
+            </Style>
+
+            <!-- 输入框：TextControlBackground 这类框架内已有的 key 我们盖不过（同按钮），
+                 实测单行输入框仍是 #E5E5E5 白块，所以在控件自身属性上压。 -->
+            <!-- ============================================================
+                 基础层：全应用共享的控件底座。
+                 卡片 / 输入框只有一套底层规格；窗口级样式只允许 BasedOn 增量
+                 （变体在顶层做），不允许复制一份 setter 各自为政。
+                 模板层：玻璃输入模板（GlassBoxStyle / GlassPasswordBoxStyle）
+                 是全应用 TextBox / PasswordBox 的默认模板底座——绕开框架
+                 聚焦态强制白底；表单字段变体基于它再叠规格。
+                 ============================================================ -->
+
+            <!-- 圆角令牌：主流值 1:1 映射（改档位只动这里）。
+                 语义特殊的圆角保留内联：开关旋钮 9（半高即圆形）、
+                 键帽 4/5、徽章头像 18/24、AI 徽标 9.5（半高胶囊）。 -->
+            <CornerRadius x:Key="RadiusCard">12</CornerRadius>
+            <CornerRadius x:Key="RadiusPill">14</CornerRadius>
+            <CornerRadius x:Key="RadiusField">8</CornerRadius>
+            <CornerRadius x:Key="RadiusButton">7</CornerRadius>
+            <CornerRadius x:Key="RadiusChip">6</CornerRadius>
+
+            <!-- 卡片底座：面板级容器（12 圆角 + 发丝描边） -->
+            <Style x:Key="AppCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource SetCardFillBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource SetCardStrokeBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusCard}"/>
+                <Setter Property="Padding" Value="14,12"/>
+            </Style>
+
+            <!-- 徽章/胶囊底座：卡片内的小标签件（ subtle 填充 + 发丝描边） -->
+            <Style x:Key="AppBadgeStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusField}"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
+
+            <!-- 键帽底座：快捷键提示的小键帽（1px 描边 + 紧凑圆角 + 垂直居中） -->
+            <Style x:Key="AppKeycapStyle" TargetType="Border">
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="5"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
+
+            <!-- 扁平内层字段：外壳负责视觉，内层只负责输入（透明 / 无边框 / 居中） -->
+            <Style x:Key="AppFieldInnerStyle" TargetType="TextBox">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="MinHeight" Value="0"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="UseSystemFocusVisuals" Value="False"/>
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}"/>
+            </Style>
+            <Style x:Key="AppFieldInnerPasswordStyle" TargetType="PasswordBox">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="MinHeight" Value="0"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="UseSystemFocusVisuals" Value="False"/>
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}"/>
+            </Style>
+
+            <!-- 通用玻璃输入框模板：默认 TextBox 模板在聚焦态会强制切换成框架白底，
+                 样式里的半透背景一聚焦就被盖掉；这里自绘——背景在任何状态下都不变，
+                 焦点反馈只用描边提亮（品牌蓝），玻璃始终透上来 -->
+            <Style x:Key="GlassBoxStyle" TargetType="TextBox" BasedOn="{StaticResource AppFieldInnerStyle}">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TextBox">
+                            <Grid x:Name="Root" Background="Transparent">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal"/>
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="BorderElement.BorderBrush" Value="{ThemeResource TextControlBorderBrushPointerOver}"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Focused">
+                                            <VisualState.Setters>
+                                                <Setter Target="BorderElement.BorderBrush" Value="{ThemeResource GlassBoxFocusStrokeBrush}"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Opacity" Value="0.45"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <Border x:Name="BorderElement"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="{TemplateBinding CornerRadius}"/>
+                                <Grid Margin="{TemplateBinding BorderThickness}">
+                                    <ScrollViewer x:Name="ContentElement"
+                                                  Background="Transparent"
+                                                  Padding="{TemplateBinding Padding}"
+                                                  HorizontalScrollMode="Auto"
+                                                  VerticalScrollMode="Auto"
+                                                  HorizontalScrollBarVisibility="Hidden"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  ZoomMode="Disabled"
+                                                  IsTabStop="False"
+                                                  AutomationProperties.AccessibilityView="Raw"/>
+                                    <ContentPresenter x:Name="PlaceholderTextContentPresenter"
+                                                      Content="{TemplateBinding PlaceholderText}"
+                                                      Foreground="{ThemeResource TextControlPlaceholderForeground}"
+                                                      Padding="{TemplateBinding Padding}"
+                                                      HorizontalAlignment="Left"
+                                                      IsHitTestVisible="False"/>
+                                </Grid>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- 独立表单字段：有边界、可聚焦的输入面（HistField* 与搜索框同源规格）。
+                 TextBox / PasswordBox 基于玻璃模板，规格 setter 在此统一定义；
+                 不设 FontSize——由使用场景自定（列表 12.5 / 表单 12 / 大号输入另定）。 -->
+            <Style x:Key="AppFieldBoxStyle" TargetType="TextBox" BasedOn="{StaticResource GlassBoxStyle}">
+                <Setter Property="Background" Value="{ThemeResource HistFieldFillBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource HistFieldStrokeBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusField}"/>
+                <Setter Property="MinHeight" Value="34"/>
+                <Setter Property="Padding" Value="10,6"/>
+            </Style>
+            <Style x:Key="AppFieldPasswordStyle" TargetType="PasswordBox" BasedOn="{StaticResource GlassPasswordBoxStyle}">
+                <Setter Property="Background" Value="{ThemeResource HistFieldFillBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource HistFieldStrokeBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusField}"/>
+                <Setter Property="MinHeight" Value="34"/>
+                <Setter Property="Padding" Value="10,6"/>
+            </Style>
+            <Style x:Key="AppFieldComboStyle" TargetType="ComboBox">
+                <Setter Property="Background" Value="{ThemeResource HistFieldFillBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource HistFieldStrokeBrush}"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusField}"/>
+                <Setter Property="MinHeight" Value="34"/>
+            </Style>
+
+            <!-- 隐式样式：全应用所有未经装饰的输入控件统一落到表单字段底座上；
+                 特殊场景（外壳内层、悬浮画布上的裸输入）用显式样式或内联属性在顶层偏离。 -->
+            <Style TargetType="TextBox" BasedOn="{StaticResource AppFieldBoxStyle}"/>
+            <Style TargetType="PasswordBox" BasedOn="{StaticResource AppFieldPasswordStyle}"/>
+            <Style TargetType="ComboBox" BasedOn="{StaticResource AppFieldComboStyle}"/>
+
+            <!-- NumberBox 内层输入框：模板里用显式样式引用框架键 NumberBoxTextBoxStyle，
+                 本版本框架模板内部的资源引用不回落到应用资源，覆盖键不生效；
+             键留在这里备用，实际生效的是 Loaded 时的代码内替换（见 SettingsWindow） -->
+            <Style x:Key="NumberBoxTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource GlassBoxStyle}"/>
+
+            <!-- NumberBox 内层框专用的玻璃面：NumberBox 自己的外框画玻璃，内层彻底扁平 -->
+            <Style x:Key="GlassBoxInnerStyle" TargetType="TextBox" BasedOn="{StaticResource GlassBoxStyle}">
+                <Setter Property="Padding" Value="8,4"/>
+            </Style>
+
+            <!-- 通用玻璃密码框：同 GlassBoxStyle 思路——默认 PasswordBox 模板聚焦也强制切白底，
+                 自绘后背景任何状态不变；RevealButton 是框架按名字找的部件（peek 显码），
+                 显隐由框架的 ButtonStates 状态控制 -->
+            <Style x:Key="GlassPasswordBoxStyle" TargetType="PasswordBox" BasedOn="{StaticResource AppFieldInnerPasswordStyle}">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="PasswordBox">
+                            <Grid x:Name="Root" Background="Transparent">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal"/>
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="BorderElement.BorderBrush" Value="{ThemeResource TextControlBorderBrushPointerOver}"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Focused">
+                                            <VisualState.Setters>
+                                                <Setter Target="BorderElement.BorderBrush" Value="{ThemeResource GlassBoxFocusStrokeBrush}"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Opacity" Value="0.45"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                    <VisualStateGroup x:Name="ButtonStates">
+                                        <VisualState x:Name="ButtonVisible">
+                                            <VisualState.Setters>
+                                                <Setter Target="RevealButton.Visibility" Value="Visible"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="ButtonHidden"/>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <Border x:Name="BorderElement"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="{TemplateBinding CornerRadius}"/>
+                                <Grid Margin="{TemplateBinding BorderThickness}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid Grid.Column="0">
+                                        <ScrollViewer x:Name="ContentElement"
+                                                      Background="Transparent"
+                                                      Padding="{TemplateBinding Padding}"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalScrollMode="Auto"
+                                                      HorizontalScrollBarVisibility="Hidden"
+                                                      ZoomMode="Disabled"
+                                                      IsTabStop="False"
+                                                      AutomationProperties.AccessibilityView="Raw"/>
+                                        <ContentPresenter x:Name="PlaceholderTextContentPresenter"
+                                                          Content="{TemplateBinding PlaceholderText}"
+                                                          Foreground="{ThemeResource TextControlPlaceholderForeground}"
+                                                          Padding="{TemplateBinding Padding}"
+                                                          HorizontalAlignment="Left"
+                                                          VerticalAlignment="Center"
+                                                          IsHitTestVisible="False"/>
+                                    </Grid>
+                                    <Button x:Name="RevealButton" Grid.Column="1" Visibility="Collapsed"
+                                            VerticalAlignment="Center" Margin="0,0,5,0" Padding="6"
+                                            Background="Transparent" BorderThickness="0">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="Transparent"
+                                                        CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                                    <FontIcon Glyph="&#xE7B3;" FontSize="12" Opacity="0.55"
+                                                              Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </Grid>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- 超链接按钮（「恢复默认」等）：系统模板悬停/按下会叠框架灰白面，
+                 自绘后只剩内容透明度变化，玻璃不动 -->
+            <Style TargetType="HyperlinkButton">
+                <Setter Property="Foreground" Value="{ThemeResource SnapFlowAccentBrush}"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="HyperlinkButton">
+                            <Grid Background="Transparent">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal"/>
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Presenter.Opacity" Value="0.7"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Presenter.Opacity" Value="0.5"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="Presenter.Opacity" Value="0.45"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <ContentPresenter x:Name="Presenter"
+                                                  Padding="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="Left"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- 下拉按钮（导入 / 排序）：同玻璃脸，悬停浮现一层玻璃薄面而不是框架灰白 -->
+            <Style TargetType="DropDownButton">
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="DropDownButton">
+                            <Grid Background="Transparent">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal"/>
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Face.Background" Value="{ThemeResource HotkeyFillBrush}"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Face.Background" Value="{ThemeResource HotkeyFillPressedBrush}"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Opacity" Value="0.45"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <Border x:Name="Face" Background="Transparent"
+                                        CornerRadius="{TemplateBinding CornerRadius}"/>
+                                <Grid Margin="{TemplateBinding Padding}" ColumnSpacing="6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ContentPresenter Grid.Column="0"
+                                                      Content="{TemplateBinding Content}"
+                                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                      VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                                    <FontIcon Grid.Column="1" Glyph="&#xE70D;" FontSize="9" Opacity="0.5"
+                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                              VerticalAlignment="Center"/>
+                                </Grid>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- 弹层（Flyout）：系统 FlyoutPresenter 自带实白底，用显式属性覆盖到玻璃面 -->
+            <Style TargetType="FlyoutPresenter">
+                <Setter Property="Background" Value="{ThemeResource GlassFlyoutFillBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource GlassFlyoutStrokeBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="10"/>
+            </Style>
+
+            <!-- 菜单弹层（MenuFlyout）：同 Flyout，右键菜单 / 下拉菜单的容器也是实白底 -->
+            <Style TargetType="MenuFlyoutPresenter">
+                <Setter Property="Background" Value="{ThemeResource GlassFlyoutFillBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource GlassFlyoutStrokeBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="10"/>
+                <Setter Property="Padding" Value="4"/>
+            </Style>
+
+            <!-- 提示气泡：同样是系统实白底 -->
+            <Style TargetType="ToolTip">
+                <Setter Property="Background" Value="{ThemeResource GlassFlyoutFillBrush}"/>
+                <Setter Property="BorderBrush" Value="{ThemeResource GlassFlyoutStrokeBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusField}"/>
+            </Style>
+
+            <!-- 下拉项：系统条目自带灰底 / 选中是实心系统蓝，覆盖资源盖不动（popup 里的项走框架 key），
+                 所以自带模板：选中用品牌蓝 22% 薄面，悬停 12% 白。 -->
+            <Style TargetType="ComboBoxItem">
+                <Setter Property="Padding" Value="10,6"/>
+                <Setter Property="MinHeight" Value="0"/>
+                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="UseSystemFocusVisuals" Value="False"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ComboBoxItem">
+                            <Grid x:Name="Root" Background="Transparent">
+                                <Border x:Name="Bg" CornerRadius="{StaticResource RadiusChip}" Margin="2,1" Background="Transparent"/>
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal"/>
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Bg.Background" Value="{ThemeResource HotkeyFillBrush}"/>
+                                                <Setter Target="Bg.Opacity" Value="1"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Bg.Opacity" Value="0.7"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="Root.Opacity" Value="0.4"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                    <VisualStateGroup x:Name="SelectionStates">
+                                        <VisualState x:Name="Unselected"/>
+                                        <VisualState x:Name="Selected">
+                                            <VisualState.Setters>
+                                                <Setter Target="Bg.Opacity" Value="1"/>
+                                                <Setter Target="Bg.Background" Value="{ThemeResource ComboItemSelectedFaceBrush}"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="SelectedPointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Bg.Opacity" Value="1"/>
+                                                <Setter Target="Bg.Background" Value="{ThemeResource ComboItemSelectedFaceBrush}"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="SelectedPressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Bg.Opacity" Value="0.85"/>
+                                                <Setter Target="Bg.Background" Value="{ThemeResource ComboItemSelectedFaceBrush}"/>
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <Style x:Key="SectionLabelStyle" TargetType="TextBlock">
                 <Setter Property="FontSize" Value="14"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
@@ -171,67 +974,63 @@
                 <Setter Property="LineHeight" Value="17"/>
             </Style>
 
-            <Style x:Key="SectionCardStyle" TargetType="Border">
+            <Style x:Key="SectionCardStyle" TargetType="Border" BasedOn="{StaticResource AppCardStyle}">
+                <!-- 变体：更轻的面板色 + 8 圆角 + 无内边距（行内自行控制） -->
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}"/>
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
-                <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusField}"/>
                 <Setter Property="Padding" Value="0"/>
             </Style>
 
-            <Style x:Key="HotkeyBoxStyle" TargetType="TextBox">
+            <Style x:Key="HotkeyBoxStyle" TargetType="TextBox" BasedOn="{StaticResource AppFieldBoxStyle}">
                 <Setter Property="Width" Value="148"/>
-                <Setter Property="MinHeight" Value="34"/>
                 <Setter Property="VerticalAlignment" Value="Center"/>
                 <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                <Setter Property="VerticalContentAlignment" Value="Center"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
                 <Setter Property="FontSize" Value="13"/>
                 <Setter Property="IsReadOnly" Value="True"/>
                 <Setter Property="PlaceholderText" Value="按下快捷键"/>
-                <Setter Property="CornerRadius" Value="6"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusChip}"/>
                 <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}"/>
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
             </Style>
 
-            <Style x:Key="FilterChipStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+            <Style x:Key="FilterChipStyle" TargetType="Button" BasedOn="{StaticResource GlassButtonFaceStyle}">
                 <Setter Property="Padding" Value="10,3.5"/>
                 <Setter Property="MinWidth" Value="0"/>
                 <Setter Property="MinHeight" Value="28"/>
                 <Setter Property="FontSize" Value="12"/>
-                <Setter Property="CornerRadius" Value="14"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
                 <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
             </Style>
 
-            <Style x:Key="QuietButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+            <Style x:Key="QuietButtonStyle" TargetType="Button" BasedOn="{StaticResource GlassButtonFaceStyle}">
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="BorderThickness" Value="0"/>
                 <Setter Property="Padding" Value="12,6"/>
                 <Setter Property="MinWidth" Value="0"/>
-                <Setter Property="CornerRadius" Value="6"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusChip}"/>
             </Style>
 
-            <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+            <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource GlassButtonFaceStyle}">
                 <Setter Property="Width" Value="32"/>
                 <Setter Property="Height" Value="32"/>
                 <Setter Property="Padding" Value="0"/>
                 <Setter Property="MinWidth" Value="0"/>
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="BorderThickness" Value="0"/>
-                <Setter Property="CornerRadius" Value="6"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusChip}"/>
             </Style>
 
             <!-- 实体键帽质感徽章：随主题取色，底部加厚描边模拟键帽侧壁 -->
-            <Style x:Key="HotkeyKeycapStyle" TargetType="Border">
+            <Style x:Key="HotkeyKeycapStyle" TargetType="Border" BasedOn="{StaticResource AppKeycapStyle}">
                 <Setter Property="Background" Value="{ThemeResource HotkeyKeycapFillBrush}"/>
                 <Setter Property="BorderBrush" Value="{ThemeResource HotkeyKeycapStrokeBrush}"/>
                 <Setter Property="BorderThickness" Value="1,1,1,2"/>
-                <Setter Property="CornerRadius" Value="5"/>
                 <Setter Property="Padding" Value="8,2.5"/>
                 <Setter Property="MinHeight" Value="24"/>
-                <Setter Property="VerticalAlignment" Value="Center"/>
             </Style>
 
             <!--
@@ -244,7 +1043,7 @@
                 <Setter Property="MinHeight" Value="36"/>
                 <Setter Property="MinWidth" Value="140"/>
                 <Setter Property="Padding" Value="12,5"/>
-                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusField}"/>
                 <Setter Property="Background" Value="{ThemeResource HotkeyFillBrush}"/>
                 <Setter Property="BorderBrush" Value="{ThemeResource HotkeyStrokeBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
@@ -340,11 +1139,8 @@
                 </Setter>
             </Style>
 
-            <Style x:Key="TagChipItemStyle" TargetType="Border">
-                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}"/>
-                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
-                <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="CornerRadius" Value="12"/>
+            <Style x:Key="TagChipItemStyle" TargetType="Border" BasedOn="{StaticResource AppBadgeStyle}">
+                <Setter Property="CornerRadius" Value="{StaticResource RadiusCard}"/>
                 <Setter Property="Padding" Value="10,3,6,3"/>
                 <Setter Property="Margin" Value="0,0,6,6"/>
             </Style>

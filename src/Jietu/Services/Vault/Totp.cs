@@ -27,6 +27,8 @@ public static class Totp
 
     public static string Compute(byte[] key, long unixSeconds, int digits, int period)
     {
+        // 防御性钳制：digits 过大时 Math.Pow→int 会溢出为负，取模产生错误输出。
+        digits = Math.Clamp(digits, 6, 10);
         // RFC 6238：计数器 = floor(unixTime / period)，大端 8 字节。
         Span<byte> counter = stackalloc byte[8];
         BinaryPrimitives.WriteInt64BigEndian(counter, unixSeconds / period);

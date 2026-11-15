@@ -174,12 +174,23 @@ internal static class HardwareMonitorLogic
     /// <summary>
     /// 双显卡选择：默认显示显存最大的主适配器（独显）；仅当另一张适配器的平滑利用率
     /// 高出 3 个百分点以上时才切换——核显干活、独显休眠的轻薄本场景跟着真实负载走。
+    /// <paramref name="currentLuid"/> 传入上一次选中的卡以实现不对称迟滞：
+    /// 已切走时主卡要反超当前卡 8 个百分点以上才切回，避免两卡负载在
+    /// 阈值附近徘徊时显示卡逐秒来回跳（GPU 名称与显存读数闪变）。
     /// </summary>
-    public static ulong SelectGpuAdapter(ulong primaryLuid, IReadOnlyDictionary<ulong, float> smoothedUsage)
+    public static ulong SelectGpuAdapter(ulong primaryLuid, IReadOnlyDictionary<ulong, float> smoothedUsage, ulong? currentLuid = null)
     {
-        var primaryUsage = smoothedUsage.GetValueOrDefault(primaryLuid, 0f);
+        var current = currentLuid ?? primaryLuid;
+        if (current != primaryLuid)
+        {
+            var currentUsage = smoothedUsage.GetValueOrDefault(current, 0f);
+            var primaryUsage = smoothedUsage.GetValueOrDefault(primaryLuid, 0f);
+            return primaryUsage > currentUsage + 8f ? primaryLuid : current;
+        }
+
+        var primaryUsage2 = smoothedUsage.GetValueOrDefault(primaryLuid, 0f);
         ulong best = primaryLuid;
-        var bestUsage = primaryUsage;
+        var bestUsage = primaryUsage2;
         foreach (var (luid, usage) in smoothedUsage)
         {
             if (usage > bestUsage)
@@ -189,7 +200,7 @@ internal static class HardwareMonitorLogic
             }
         }
 
-        return bestUsage > primaryUsage + 3f ? best : primaryLuid;
+        return bestUsage > primaryUsage2 + 3f ? best : primaryLuid;
     }
 
     /// <summary>实时频率 = 基频 × % Processor Performance / 100（大于 100 表示已睿频）。基频未知返回 0，UI 隐藏频率。</summary>

@@ -284,11 +284,20 @@ public sealed class ClipRow : INotifyPropertyChanged
     {
         lock (ThumbnailSync)
         {
-            if (!Thumbnails.ContainsKey(path))
+            // LRU 而非 FIFO：命中缓存也要刷新位置，否则滚动浏览到容量上限后，
+            // 最早加载的条目即使一直在看也会被挤掉、回滚时反复重新解码。
+            if (Thumbnails.ContainsKey(path))
             {
-                ThumbnailOrder.Enqueue(path);
+                var restart = ThumbnailOrder.ToArray().ToList();
+                ThumbnailOrder.Clear();
+                restart.RemoveAll(p => p.Equals(path, StringComparison.OrdinalIgnoreCase));
+                foreach (var p in restart)
+                {
+                    ThumbnailOrder.Enqueue(p);
+                }
             }
 
+            ThumbnailOrder.Enqueue(path);
             Thumbnails[path] = image;
             while (ThumbnailOrder.Count > ThumbnailCap)
             {

@@ -214,6 +214,13 @@ public sealed partial class PasswordWindow
             return;
         }
 
+        // 大写锁定提示占着这一行时，比对结果先让位，免得两行字重叠
+        if (CapsHint.Visibility == Visibility.Visible)
+        {
+            SetVisibleWithFade(MatchHint, false);
+            return;
+        }
+
         SetVisibleWithFade(MatchHint, true);
         if (MasterBox.Password == ConfirmBox.Password)
         {
@@ -355,13 +362,15 @@ public sealed partial class PasswordWindow
         UnlockRecoverButton.Visibility = Visibility.Collapsed;
         UnlockErrorText.Text = string.IsNullOrWhiteSpace(message) ? "解锁失败，请重试。" : message;
         UnlockError.Visibility = Visibility.Visible;
-        UnlockNotice.Visibility = Visibility.Collapsed;
+        SetVisibleWithFade(UnlockNotice, false);
     }
 
     private void ShowUnlockNotice(string message)
     {
         UnlockNotice.Text = message;
-        UnlockNotice.Visibility = Visibility.Visible;
+        // 同一提示槽只留一行：大写锁定提示在场时让位给软提示没有意义，先收掉它
+        SetVisibleWithFade(CapsHint, false);
+        SetVisibleWithFade(UnlockNotice, true);
         UnlockError.Visibility = Visibility.Collapsed;
     }
 
@@ -371,7 +380,7 @@ public sealed partial class PasswordWindow
         UnlockErrorTitle.Visibility = Visibility.Collapsed;
         UnlockErrorHint.Visibility = Visibility.Collapsed;
         UnlockRecoverButton.Visibility = Visibility.Collapsed;
-        UnlockNotice.Visibility = Visibility.Collapsed;
+        SetVisibleWithFade(UnlockNotice, false);
     }
 
     private void OnFieldFocus(object sender, RoutedEventArgs e)
@@ -409,9 +418,14 @@ public sealed partial class PasswordWindow
 
         var caps = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.CapitalLock)
             .HasFlag(CoreVirtualKeyStates.Locked);
-        CapsHint.Visibility = caps && UnlockPanel.Visibility == Visibility.Visible
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        var show = caps && UnlockPanel.Visibility == Visibility.Visible;
+        SetVisibleWithFade(CapsHint, show);
+        // 提示槽只有一行位置：大写锁定优先级最高，出现时让位其他两条，避免文字叠在一起
+        if (show)
+        {
+            SetVisibleWithFade(MatchHint, false);
+            SetVisibleWithFade(UnlockNotice, false);
+        }
     }
 
     private async void OnHelloClick(object sender, RoutedEventArgs e)

@@ -79,7 +79,17 @@ public static class SettingsService
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var json = SerializeForStorage(settings);
             var temporary = path + ".tmp";
-            File.WriteAllText(temporary, json);
+            // WriteThrough + FlushToDisk：写完只进 OS 缓存时，断电可能让重命名元数据
+            // 先于文件数据落盘，settings.json 变成 0 字节/半截——全部设置（含 DPAPI
+            // 密文只能重填的 AI Key）都会重置。设置写入低频，fsync 的开销可以接受。
+            using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+            using (var writer = new StreamWriter(stream))
+            {
+                writer.Write(json);
+                writer.Flush();
+                stream.Flush(flushToDisk: true);
+            }
+
             File.Move(temporary, path, overwrite: true);
             LastLoadError = null;
             return true;
@@ -173,7 +183,6 @@ public static class SettingsService
 
         settings.SaveFolder ??= "";
         settings.IgnoredProcesses = ProcessNames.Normalize(settings.IgnoredProcesses);
-        settings.OsdPosition = NormalizeOsdPosition(settings.OsdPosition);
         settings.OsdDisplay = NormalizeOsdDisplay(settings.OsdDisplay);
         settings.MultiMonitorCaptureMode = NormalizeCaptureMode(settings.MultiMonitorCaptureMode);
         if (string.IsNullOrWhiteSpace(settings.AiApiUrl))
@@ -194,9 +203,6 @@ public static class SettingsService
         settings.AiApiKey ??= "";
         settings.RetentionDays = Math.Clamp(settings.RetentionDays, 1, 3650);
     }
-
-    private static string NormalizeOsdPosition(string? value)
-        => string.Equals(value?.Trim(), "TopLeft", StringComparison.OrdinalIgnoreCase) ? "TopLeft" : "TopRight";
 
     private static string NormalizeOsdDisplay(string? value)
         => string.Equals(value?.Trim(), "FollowCursor", StringComparison.OrdinalIgnoreCase) ? "FollowCursor" : "Primary";

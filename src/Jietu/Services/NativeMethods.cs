@@ -275,6 +275,13 @@ internal static partial class NativeMethods
     [DllImport("user32.dll")]
     public static extern bool GetCursorPos(out Point lpPoint);
 
+    /// <summary>客户区（不含系统边框与标题栏）。窗口级抓屏必须按这个算，否则边缘会被边框裁掉。</summary>
+    [DllImport("user32.dll")]
+    public static extern bool GetClientRect(IntPtr hWnd, out Rect lpRect);
+
+    [DllImport("user32.dll")]
+    public static extern bool ClientToScreen(IntPtr hWnd, ref Point lpPoint);
+
     [DllImport("user32.dll")]
     public static extern IntPtr MonitorFromPoint(Point pt, uint dwFlags);
 
@@ -330,6 +337,9 @@ internal static partial class NativeMethods
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
     public static extern nint GetWindowLongPtr(IntPtr hWnd, int nIndex);

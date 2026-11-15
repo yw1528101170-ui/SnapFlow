@@ -17,15 +17,21 @@ internal static class Motion
     public const string TranslateXPath = "(UIElement.RenderTransform).(CompositeTransform.TranslateX)";
     public const string TranslateYPath = "(UIElement.RenderTransform).(CompositeTransform.TranslateY)";
 
+    // 高频路径（RowIn 随列表滚动反复触发）每次 new 缓动对象是纯浪费：
+    // 缓动求值无状态，跨动画共享同一实例是安全的；带自定义振幅的 Spring 仍按需创建。
+    private static readonly CubicEase EaseOutInstance = new() { EasingMode = EasingMode.EaseOut };
+    private static readonly CubicEase EaseInInstance = new() { EasingMode = EasingMode.EaseIn };
+    private static readonly BackEase SpringInstance = new() { Amplitude = 0.22, EasingMode = EasingMode.EaseOut };
+
     /// <summary>默认曲线：启动快、收尾缓，接近 Apple 的 ease-out。</summary>
-    public static EasingFunctionBase Ease => new CubicEase { EasingMode = EasingMode.EaseOut };
+    public static EasingFunctionBase Ease => EaseOutInstance;
 
     /// <summary>收起/离场曲线。</summary>
-    public static EasingFunctionBase EaseIn => new CubicEase { EasingMode = EasingMode.EaseIn };
+    public static EasingFunctionBase EaseIn => EaseInInstance;
 
     /// <summary>带轻微回弹的曲线，用于位移与缩放的收尾。</summary>
     public static EasingFunctionBase Spring(double amplitude = 0.22) =>
-        new BackEase { Amplitude = amplitude, EasingMode = EasingMode.EaseOut };
+        amplitude == 0.22 ? SpringInstance : new BackEase { Amplitude = amplitude, EasingMode = EasingMode.EaseOut };
 
     /// <summary>确保元素拥有可动画的复合变换。</summary>
     public static CompositeTransform Prep(FrameworkElement element)
@@ -85,13 +91,13 @@ internal static class Motion
         Fade(root, 0, 1, 190, Ease);
     }
 
-    /// <summary>列表行入场：淡入 + 上浮，按序号轻微错峰。</summary>
+    /// <summary>列表行入场：淡入 + 上浮，按序号轻微错峰。上浮用 EaseOut 收尾，overshoot 会在 16px 间距里被看出来。</summary>
     public static void RowIn(FrameworkElement container, int index)
     {
         var transform = Prep(container);
         var delay = Math.Min(Math.Max(index, 0), 10) * 22;
         Fade(container, 0, 1, 220, Ease, delay);
-        MoveY(container, transform, 9, 0, 340, Spring(0.2), delay);
+        MoveY(container, transform, 6, 0, 300, Ease, delay);
     }
 
     private static void Run(UIElement target, string path, double from, double to, int milliseconds,

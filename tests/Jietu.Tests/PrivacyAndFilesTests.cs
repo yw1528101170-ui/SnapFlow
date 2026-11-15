@@ -29,6 +29,61 @@ public sealed class SensitiveForegroundTests
             SensitiveForeground.SetRecordTerminals(false);
         }
     }
+
+    [Fact]
+    public void UserIgnoredListCoversRenamedProcess()
+    {
+        try
+        {
+            // 微信 3.x 是 WeChat.exe，4.x 是 Weixin.exe：排一个必须同时挡住另一个。
+            SensitiveForeground.SetIgnored(ProcessNames.Parse("wechat.exe"));
+            Assert.True(SensitiveForeground.IsUserIgnored("Weixin.exe"));
+            Assert.False(SensitiveForeground.IsUserIgnored("notepad.exe"));
+
+            SensitiveForeground.SetIgnored(ProcessNames.Parse(@"C:\Program Files\Tencent\Weixin\Weixin.exe"));
+            Assert.True(SensitiveForeground.IsUserIgnored("WeChat.exe"));
+        }
+        finally
+        {
+            SensitiveForeground.SetIgnored([]);
+        }
+    }
+}
+
+public sealed class ProcessNamesTests
+{
+    [Theory]
+    [InlineData("notepad", "notepad.exe")]
+    [InlineData("  Notepad.EXE  ", "Notepad.EXE")]
+    [InlineData(@"""C:\Windows\system32\notepad.exe""", "notepad.exe")]
+    [InlineData(@"D:/Apps/Foo Bar/foo.exe", "foo.exe")]
+    public void NormalizeOneAcceptsPathsQuotesAndMissingSuffix(string raw, string expected)
+    {
+        Assert.Equal(expected, ProcessNames.NormalizeOne(raw));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(@"C:\Windows\")]
+    public void NormalizeOneRejectsEmptyInput(string raw)
+    {
+        Assert.Equal("", ProcessNames.NormalizeOne(raw));
+    }
+
+    [Fact]
+    public void AliasNamesCollapseIntoOneEntry()
+    {
+        var list = ProcessNames.Normalize(["WeChat.exe", "weixin.exe", "notepad", "NOTEPAD.exe"]);
+        Assert.Equal(["WeChat.exe", "notepad.exe"], list);
+    }
+
+    [Fact]
+    public void CoveredByUnderstandsAliases()
+    {
+        Assert.True(ProcessNames.CoveredBy(["wechat.exe"], "Weixin.exe"));
+        Assert.False(ProcessNames.CoveredBy(["wechat.exe"], "notepad.exe"));
+    }
 }
 
 public sealed class AiVisionServiceTests

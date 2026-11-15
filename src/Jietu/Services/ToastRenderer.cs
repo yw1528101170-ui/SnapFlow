@@ -13,7 +13,7 @@ internal enum ToastKind
 /// </summary>
 internal static class ToastRenderer
 {
-    private const float CapsuleHeightDip = 40f;
+    internal const float CapsuleHeightDip = 40f;
     private const float PadLeftDip = 13f;
     private const float IconDip = 22f;
     private const float GapDip = 11f;
@@ -56,7 +56,8 @@ internal static class ToastRenderer
         return (Math.Max(width, 8), Math.Max(height, 8));
     }
 
-    internal static void Draw(IntPtr g, float scale, in State state, int bufferWidth, int bufferHeight)
+    internal static void Draw(IntPtr g, float scale, in State state, int bufferWidth, int bufferHeight,
+        IntPtr glassImage = default)
     {
         float pad = ShadowPadDip * scale;
         float capH = CapsuleHeightDip * scale;
@@ -93,18 +94,33 @@ internal static class ToastRenderer
         }
 
         var capsule = OverlayGdi.BuildRoundRect(x, y, w, capH, capH * 0.5f);
+        bool glass = glassImage != IntPtr.Zero;
 
-        // ---------- 2. 深色玻璃胶囊 ----------
-        OverlayGdi.FillPathVertical(g, capsule, OverlayGdi.WithAlpha(CapsuleTop, alpha),
-            OverlayGdi.WithAlpha(CapsuleBottom, alpha), cx, y, y + capH);
+        // ---------- 2. 材质 ----------
+        if (glass)
+        {
+            // 液态玻璃模式：卡面是「玻璃背后的画面被模糊 + 折射后的结果」，
+            // 由 ToastWindow 用 ScreenGlass 抓屏合成（全圆角 + 镜面亮边已烘焙进图像），
+            // 直接按当前胶囊矩形缩放贴上——宽度弹性动画中间帧直接拉伸过渡。
+            OverlayGdi.GdipDrawImageRect(g, glassImage, x, y, w, capH);
+            // 轻压暗：白字在亮色壁纸上也要有对比；OSD 同款 tint 已在合成时烘焙，这里只补一层缓坡
+            OverlayGdi.FillPathVertical(g, capsule, OverlayGdi.WithAlpha(0x1E000000, alpha),
+                OverlayGdi.WithAlpha(0x3C000000, alpha), cx, y, y + capH);
+        }
+        else
+        {
+            // 兜底材质：玻璃合成失败（锁屏 / UAC / 全黑壁纸）时退回不透明深色胶囊
+            OverlayGdi.FillPathVertical(g, capsule, OverlayGdi.WithAlpha(CapsuleTop, alpha),
+                OverlayGdi.WithAlpha(CapsuleBottom, alpha), cx, y, y + capH);
 
-        OverlayGdi.SetClip(g, capsule);
-
-        // 顶部高光：模拟环境光在玻璃表面的柔和反射
-        var sheen = OverlayGdi.BuildRoundRect(x, y, w, capH * 0.62f, capH * 0.5f);
-        OverlayGdi.FillPathVertical(g, sheen, OverlayGdi.WithAlpha(0x1CFFFFFF, alpha), OverlayGdi.WithAlpha(0x00FFFFFF, alpha),
-            cx, y, y + capH * 0.62f);
-        OverlayGdi.GdipDeletePath(sheen);
+            // 顶部高光：模拟环境光在玻璃表面的柔和反射（裁在胶囊内）
+            OverlayGdi.SetClip(g, capsule);
+            var sheen = OverlayGdi.BuildRoundRect(x, y, w, capH * 0.62f, capH * 0.5f);
+            OverlayGdi.FillPathVertical(g, sheen, OverlayGdi.WithAlpha(0x1CFFFFFF, alpha), OverlayGdi.WithAlpha(0x00FFFFFF, alpha),
+                cx, y, y + capH * 0.62f);
+            OverlayGdi.GdipDeletePath(sheen);
+            OverlayGdi.ResetClip(g);
+        }
 
         // ---------- 3. 徽章 / 指示器 ----------
         float iconSize = IconDip * scale;
@@ -127,10 +143,14 @@ internal static class ToastRenderer
         OverlayGdi.DrawText(g, state.Message, textX, y, textW, capH, font, OverlayGdi.AlignNear,
             OverlayGdi.WithAlpha(state.Busy ? SecondaryLabel : LabelColor, alpha));
 
-        OverlayGdi.ResetClip(g);
+        // ---------- 5. 描边 ----------
+        // 玻璃模式不描边：ScreenGlass 已烘焙像素级镜面亮边，再叠一条会把暗色描到轮廓外
+        // （与 OSD 卡面同一条经验）。兜底材质保留 1px 内描边区分玻璃与背景。
+        if (!glass)
+        {
+            OverlayGdi.StrokePath(g, capsule, OverlayGdi.WithAlpha(BorderColor, alpha), MathF.Max(1f, scale));
+        }
 
-        // ---------- 5. 1px 内描边：区分玻璃与背景 ----------
-        OverlayGdi.StrokePath(g, capsule, OverlayGdi.WithAlpha(BorderColor, alpha), MathF.Max(1f, scale));
         OverlayGdi.GdipDeletePath(capsule);
 
         if (scaled)

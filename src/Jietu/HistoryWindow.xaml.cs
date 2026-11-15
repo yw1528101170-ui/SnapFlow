@@ -71,6 +71,7 @@ public sealed partial class HistoryWindow : Window
         _host = host;
         InitializeComponent();
         WindowChrome.Apply(this, TitleBar, Root);
+        GlassOverlays.Glassify(PausedBar);
         ItemList.ItemsSource = _rows;
         ItemList.Loaded += (object _, RoutedEventArgs _) =>
         {
@@ -134,6 +135,7 @@ public sealed partial class HistoryWindow : Window
         }
         nint hwnd = WindowNative.GetWindowHandle(this);
         AppWindow.MoveAndResize(ScreenUtil.PlaceNearCursor(hwnd, 420, 680));
+
         try
         {
             AppWindow.IsShownInSwitchers = true;
@@ -331,10 +333,16 @@ public sealed partial class HistoryWindow : Window
             if (!_awaitingLayout)
             {
                 _awaitingLayout = true;
-                _scroll.SizeChanged += (object _, SizeChangedEventArgs _) =>
+                SizeChangedEventHandler handler = null!;
+                handler = (object _, SizeChangedEventArgs _) =>
                 {
+                    // 触发一次就退订：不退订的话窗口生命周期内每次 resize
+                    // 都会多调一次 ContinueIfNeeded，越挂越多。
+                    _scroll!.SizeChanged -= handler;
+                    _awaitingLayout = false;
                     ContinueIfNeeded();
                 };
+                _scroll.SizeChanged += handler;
             }
         }
         else if (_scroll.ScrollableHeight <= 8.0)

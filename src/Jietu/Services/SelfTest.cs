@@ -444,9 +444,9 @@ internal static class SelfTest
 
             // 回归：逐字段兜底（手改 null / 非法枚举 / 越界天数不应把应用带崩）。
             var nullPath = Path.Combine(root, "settings-null.json");
-            File.WriteAllText(nullPath, "{\"saveFolder\":null,\"regionHotkey\":null,\"osdPosition\":\"garbage\",\"retentionDays\":0}");
+            File.WriteAllText(nullPath, "{\"saveFolder\":null,\"regionHotkey\":null,\"osdDisplay\":\"garbage\",\"retentionDays\":0}");
             var normalized = SettingsService.Load(nullPath);
-            Expect(normalized.SaveFolder == "" && normalized.RegionHotkey == "Alt+A" && normalized.OsdPosition == "TopRight" && normalized.RetentionDays == 1, "非法字段逐项兜底", failures);
+            Expect(normalized.SaveFolder == "" && normalized.RegionHotkey == "Alt+A" && normalized.OsdDisplay == "Primary" && normalized.RetentionDays == 1, "非法字段逐项兜底", failures);
 
             // 回归：写盘失败要能被调用方感知（返回 false + LastSaveError），而不是静默丢失。
             var saveFailed = SettingsService.Save(root, new AppSettings());

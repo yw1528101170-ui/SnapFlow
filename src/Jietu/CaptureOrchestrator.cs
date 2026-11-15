@@ -83,6 +83,9 @@ internal sealed class CaptureOrchestrator
         if (_counting && delaySeconds == 0)
         {
             _captureGeneration++;
+            // 只 Cancel 不 Dispose：上一次倒计时后的抓屏/长截图可能还持有这个 CTS 的
+            // token 值，Dispose 后任何 Register/WaitHandle 类用法都会炸。
+            // CTS 留给下一次 CaptureAsync 的开头统一释放。
             _captureCts?.Cancel();
             _counting = false;
             _toast.Show("已取消截图");
@@ -94,6 +97,10 @@ internal sealed class CaptureOrchestrator
         _captureCts?.Dispose();
         var captureCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime);
         _captureCts = captureCts;
+        // 立刻把 Token 取成值：captureCts 可能被下一次 CaptureAsync / CancelActive
+        // Cancel+Dispose，而长截图的后台委托才开始执行——届时再访问 .Token 属性
+        // 会抛 ObjectDisposedException，表现为一次截图机会静默失败。
+        var captureToken = captureCts.Token;
         if (delaySeconds > 0)
         {
             _counting = true;
@@ -206,7 +213,7 @@ internal sealed class CaptureOrchestrator
                     {
                         _queue.TryEnqueue(() => _toast.ShowSticky($"正在拼接长截图... 已捕获第 {curStep} 屏 ({curHeight}px)"));
                     },
-                    captureCts.Token));
+                    captureToken));
 
                 if (generation != _captureGeneration)
                 {

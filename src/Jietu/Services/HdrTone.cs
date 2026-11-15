@@ -105,10 +105,14 @@ internal static class HdrTone
     /// 把 DXGI 桌面复制给的 R16G16B16A16_FLOAT（scRGB）帧转成 BGRA 字节。
     /// <paramref name="sdrWhiteNits"/> 为显示器当前 SDR 白点（nit，见 <c>HdrDisplay.SdrWhiteLevel</c>）：
     /// SDR 内容在 200 nit 白点下线性值会被放大到 2.5，按 80/白点 归一化后才不会过曝。
+    /// <paramref name="destination"/> 可传入与上一帧共享的复用缓冲（4K 一帧约 33MB），
+    /// 长度不符或为 null 时按需分配。
     /// </summary>
-    public static byte[] FromFloat16(IntPtr data, int width, int height, int rowPitch, float sdrWhiteNits)
+    public static byte[] FromFloat16(IntPtr data, int width, int height, int rowPitch, float sdrWhiteNits, byte[]? destination = null)
     {
-        var pixels = new byte[width * height * 4];
+        var pixels = destination is { Length: var len } && len == width * height * 4
+            ? destination
+            : new byte[width * height * 4];
         var table = TableFor(sdrWhiteNits);
         // 逐像素 Marshal.ReadInt16 在 4K 一帧约 2500 万次 P/Invoke；改为整行 Copy 进托管数组后用普通索引。
         // 临时行缓冲只在本方法栈内使用（HdrTone 保持无可变共享状态，除既有的表缓存）。
@@ -116,7 +120,7 @@ internal static class HdrTone
         if (rowBytes < width * 8)
         {
             // 理论上不会发生（DirectX 行距不小于像素跨度），防御性回退到逐像素读取。
-            return FromFloat16Slow(data, width, height, rowPitch, table);
+            return FromFloat16Slow(data, width, height, rowPitch, table, pixels);
         }
 
         var row = new byte[rowBytes];
@@ -143,9 +147,8 @@ internal static class HdrTone
         return pixels;
     }
 
-    private static byte[] FromFloat16Slow(IntPtr data, int width, int height, int rowPitch, byte[] table)
+    private static byte[] FromFloat16Slow(IntPtr data, int width, int height, int rowPitch, byte[] table, byte[] pixels)
     {
-        var pixels = new byte[width * height * 4];
         for (var y = 0; y < height; y++)
         {
             var row = data + (y * rowPitch);

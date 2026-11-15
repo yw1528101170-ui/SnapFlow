@@ -100,7 +100,6 @@ internal sealed class SettingsApplier
         _current = next;
         _osd.SetEnabled(next.ShowOsd);
         _hardwareMonitor.Enabled = next.ShowOsd;
-        _osd.SetPosition(next.OsdPosition);
         _osd.SetTargetDisplay(next.OsdDisplay);
         SensitiveForeground.SetIgnored(next.IgnoredProcesses);
         SensitiveForeground.SetRecordTerminals(next.RecordTerminals);
@@ -192,14 +191,6 @@ internal sealed class SettingsApplier
         _hardwareMonitor.Enabled = _current.ShowOsd;
         Save();
         _toast.Show(_current.ShowOsd ? "已开启性能悬浮窗" : "已关闭性能悬浮窗");
-    }
-
-    public void SetOsdPosition(string position)
-    {
-        _current.OsdPosition = position;
-        _osd.SetPosition(position);
-        Save();
-        _toast.Show(string.Equals(position, "TopLeft", StringComparison.OrdinalIgnoreCase) ? "悬浮窗已移至左上角" : "悬浮窗已移至右上角");
     }
 
     public void SetOsdDisplay(string display)

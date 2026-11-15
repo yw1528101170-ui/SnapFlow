@@ -1,3 +1,4 @@
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -98,6 +99,7 @@ public sealed partial class PasswordWindow
             CloseButtonText = "关闭",
             XamlRoot = Content.XamlRoot,
         };
+        dialog.Glassify();
 
         await dialog.ShowAsync();
     }
@@ -186,6 +188,7 @@ public sealed partial class PasswordWindow
             CloseButtonText = "关闭",
             XamlRoot = Content.XamlRoot,
         };
+        dialog.Glassify();
 
         void Rebuild()
         {
@@ -258,18 +261,38 @@ public sealed partial class PasswordWindow
 
         var purge = new Button { Content = "彻底删除", FontSize = 12, Height = 28 };
         Grid.SetColumn(purge, 2);
-        purge.Click += async (_, _) =>
+        // 回收站本身已是 ContentDialog：不能再叠第二个确认弹窗（WinUI 限制，
+        // ShowAsync 会抛"只允许一个 ContentDialog"且被全局兜底吞掉，表现为点了没反应）。
+        // 改为行内两步确认：第一次点击进入确认态（3 秒不点自动还原），第二次点击才删除。
+        var confirmPending = false;
+        DispatcherQueueTimer? revertTimer = null;
+        purge.Click += (_, _) =>
         {
-            var confirm = await ShowAppConfirmAsync(
-                "彻底删除",
-                $"彻底删除「{DisplayTitle(entry.Title)}」？这个操作不可恢复。",
-                "彻底删除",
-                danger: true);
-            if (!confirm)
+            if (!confirmPending)
             {
+                confirmPending = true;
+                purge.Content = "确认删除？";
+                purge.Background = (Brush)Application.Current.Resources["VaultErrorFillBrush"];
+                purge.BorderBrush = (Brush)Application.Current.Resources["VaultErrorStrokeBrush"];
+                revertTimer = DispatcherQueue.CreateTimer();
+                revertTimer.Interval = TimeSpan.FromSeconds(3);
+                revertTimer.IsRepeating = false;
+                revertTimer.Tick += (_, _) =>
+                {
+                    confirmPending = false;
+                    purge.Content = "彻底删除";
+                    purge.Background = null;
+                    purge.BorderBrush = null;
+                };
+                revertTimer.Start();
                 return;
             }
 
+            revertTimer?.Stop();
+            confirmPending = false;
+            purge.Content = "彻底删除";
+            purge.Background = null;
+            purge.BorderBrush = null;
             if (_vault.PurgeRecycleBinEntry(entry.Id))
             {
                 _host.Toast.Show("已彻底删除");

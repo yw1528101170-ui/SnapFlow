@@ -28,7 +28,6 @@ public sealed class AppSettings
     public string SaveFolder { get; set; } = "";
     public List<string> IgnoredProcesses { get; set; } = [];
     public bool ShowOsd { get; set; } = true;
-    public string OsdPosition { get; set; } = "TopRight";
     public string OsdDisplay { get; set; } = "Primary";
     public bool OsdHideOnCapture { get; set; } = true;
     public string MultiMonitorCaptureMode { get; set; } = "Auto";

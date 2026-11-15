@@ -17,8 +17,6 @@ internal enum TrayCommand : uint
     ClosePins = 31,
     RestoreGhostPins = 32,
     ToggleOsd = 35,
-    OsdPositionTopRight = 36,
-    OsdPositionTopLeft = 37,
     OsdDisplayPrimary = 38,
     OsdDisplayFollowCursor = 39,
     TogglePause = 40,
@@ -36,7 +34,6 @@ internal readonly record struct TrayMenuContext(
     int PinCount,
     bool HasGhostPins,
     bool ShowOsd,
-    string OsdPosition,
     string OsdDisplay,
     string VaultHotkey,
     bool VaultUnlocked);
@@ -112,7 +109,30 @@ internal sealed class TrayIcon : IDisposable
         NativeMethods.Shell_NotifyIcon(NativeMethods.NimModify, ref data);
     }
 
+    /// <summary>
+    /// 托盘右键菜单。默认走自绘的玻璃浮层；浮层建不起来（极端环境）时退回系统菜单，
+    /// 保证这个入口永远可用。返回 None 表示用户点走/按 Esc，调用方什么都不用做。
+    /// </summary>
     public TrayCommand ShowMenu(in TrayMenuContext ctx)
+    {
+        try
+        {
+            var rows = TrayMenuModel.Build(ctx);
+            var result = TrayMenuWindow.Show(rows, _hwnd);
+            if (result.HasValue)
+            {
+                return result.Value;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+        }
+
+        return ShowNativeMenu(ctx);
+    }
+
+    private TrayCommand ShowNativeMenu(in TrayMenuContext ctx)
     {
         var menu = NativeMethods.CreatePopupMenu();
         var delaySubmenu = NativeMethods.CreatePopupMenu();
@@ -169,11 +189,8 @@ internal sealed class TrayIcon : IDisposable
                 Add(menu, (nuint)TrayCommand.RestoreGhostPins, "恢复贴图鼠标交互 (退出幽灵模式)");
             }
 
-            // 5. 性能悬浮窗 (OSD)
-            Add(osdSubmenu, (nuint)TrayCommand.ToggleOsd, "显示悬浮窗", check: ctx.ShowOsd);
-            NativeMethods.AppendMenu(osdSubmenu, NativeMethods.MfSeparator, 0, null);
-            Add(osdSubmenu, (nuint)TrayCommand.OsdPositionTopRight, "停靠在右上角", check: string.Equals(ctx.OsdPosition, "TopRight", StringComparison.OrdinalIgnoreCase));
-            Add(osdSubmenu, (nuint)TrayCommand.OsdPositionTopLeft, "停靠在左上角", check: string.Equals(ctx.OsdPosition, "TopLeft", StringComparison.OrdinalIgnoreCase));
+            // 5. 性能悬浮窗 (OSD)：位置固定为顶部居中（悬停展开），这里只剩开关与驻留屏幕
+            Add(osdSubmenu, (nuint)TrayCommand.ToggleOsd, "显示悬浮窗 (顶部居中, 悬停展开)", check: ctx.ShowOsd);
             NativeMethods.AppendMenu(osdSubmenu, NativeMethods.MfSeparator, 0, null);
             Add(osdSubmenu, (nuint)TrayCommand.OsdDisplayPrimary, "停靠在主显示器", check: !string.Equals(ctx.OsdDisplay, "FollowCursor", StringComparison.OrdinalIgnoreCase));
             Add(osdSubmenu, (nuint)TrayCommand.OsdDisplayFollowCursor, "跟随鼠标所在屏幕", check: string.Equals(ctx.OsdDisplay, "FollowCursor", StringComparison.OrdinalIgnoreCase));

@@ -174,13 +174,13 @@
                     <Setter Property="MinWidth" Value="46"/>
                     <Setter Property="Background" Value="Transparent"/>
                     <Setter Property="BorderThickness" Value="0"/>
-                    <Setter Property="CornerRadius" Value="12"/>
+                    <Setter Property="CornerRadius" Value="{StaticResource RadiusCard}"/>
                     <Setter Property="UseSystemFocusVisuals" Value="False"/>
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="Button">
                                 <Grid Background="Transparent">
-                                    <Border x:Name="Plate" Background="{ThemeResource PinToolHoverBrush}" CornerRadius="12" Opacity="0"/>
+                                    <Border x:Name="Plate" Background="{ThemeResource PinToolHoverBrush}" CornerRadius="{StaticResource RadiusCard}" Opacity="0"/>
                                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     <VisualStateManager.VisualStateGroups>
                                         <VisualStateGroup x:Name="CommonStates">
@@ -327,7 +327,7 @@
                         <TextBox x:Name="NoteTextBox" Grid.Row="1"
                                  TextWrapping="Wrap"
                                  AcceptsReturn="True"
-                                 FontSize="13.5"
+                                 FontSize="13"
                                  BorderThickness="0"
                                  Background="Transparent"
                                  Foreground="#2C2820"
@@ -361,7 +361,7 @@
         <Border x:Name="GhostIndicator" Visibility="Collapsed" Opacity="0"
                 HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10"
                 Background="{ThemeResource PinBarBgBrush}" BorderBrush="{ThemeResource PinBarBorderBrush}"
-                BorderThickness="1" CornerRadius="14" Padding="10,5" IsHitTestVisible="False">
+                BorderThickness="1" CornerRadius="{StaticResource RadiusPill}" Padding="10,5" IsHitTestVisible="False">
             <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
                 <Grid Width="8" Height="8" VerticalAlignment="Center">
                     <Ellipse Fill="{ThemeResource SnapFlowAccentBrush}" Width="8" Height="8" Opacity="0.28"/>
@@ -400,7 +400,7 @@
                     <!-- 缩放 / 不透明度徽章 -->
                     <Button x:Name="StatusBadge" Style="{StaticResource PinBadgeButton}"
                             ToolTipService.ToolTip="点击重置 (0)；在此滚轮或按住 Ctrl / Shift 滚轮可调透明度" Click="OnReset">
-                        <TextBlock x:Name="StatusText" Text="100%" FontSize="11" FontWeight="SemiBold"
+                        <TextBlock x:Name="StatusText" Text="100%" FontSize="11.5" FontWeight="SemiBold"
                                    Foreground="{ThemeResource PinToolGlyphBrush}"
                                    FontFamily="Segoe UI Variable Text, Microsoft YaHei UI"/>
                     </Button>
@@ -472,7 +472,7 @@
         <Border x:Name="Hud" Visibility="Collapsed" Opacity="0"
                 HorizontalAlignment="Center" VerticalAlignment="Center"
                 Background="{ThemeResource PinHudBgBrush}" BorderBrush="{ThemeResource PinHudBorderBrush}"
-                BorderThickness="1" CornerRadius="14" Padding="16,9"
+                BorderThickness="1" CornerRadius="{StaticResource RadiusPill}" Padding="16,9"
                 IsHitTestVisible="False" RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform>
                 <CompositeTransform x:Name="HudTr" ScaleX="0.9" ScaleY="0.9"/>

@@ -33,7 +33,8 @@ internal static class SensitiveForeground
         "SecureCRT.exe",
     };
 
-    private static string[] _ignored = [];
+    // 已展开别名的排除集合：配置里只有 wechat.exe 时，微信 4.x 的 weixin.exe 也必须命中。
+    private static HashSet<string> _ignored = new(StringComparer.OrdinalIgnoreCase);
     private static bool _recordTerminals;
 
     // 密码库主窗口句柄：窗口激活时注册，激活丢失时清除。是自身进程的窗口，
@@ -42,10 +43,8 @@ internal static class SensitiveForeground
 
     public static void SetVaultWindow(IntPtr hwnd) => _vaultWindow = hwnd;
 
-    public static void SetIgnored(IReadOnlyList<string> names)
-    {
-        _ignored = names.Count == 0 ? [] : names.ToArray();
-    }
+    // 本类的 ProcessNames 字段是内置密码管理器名单，归一化工具类要走 Jietu.ProcessNames 全名。
+    public static void SetIgnored(IReadOnlyList<string> names) => _ignored = Jietu.ProcessNames.ExpandSet(names);
 
     public static void SetRecordTerminals(bool record) => _recordTerminals = record;
 
@@ -73,16 +72,7 @@ internal static class SensitiveForeground
             return false;
         }
 
-        var ignored = _ignored;
-        foreach (var name in ignored)
-        {
-            if (name.Equals(fileName, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return _ignored.Contains(fileName);
     }
 
     internal static bool IsTerminal(string? fileName)
@@ -212,6 +202,22 @@ internal static class SensitiveForeground
 
 internal static class ProcessNames
 {
+    /// <summary>排除列表上限：设置页与存储层共用这一个数字，加满后不再静默截断。</summary>
+    public const int MaxEntries = 40;
+
+    /// <summary>
+    /// 同一款软件可能换过进程名、或自带多个宿主进程。只排一个名字等于「看着加了却不生效」：
+    /// 微信 3.x 是 WeChat.exe，4.x 起改叫 Weixin.exe；Windows Terminal 另有 wt / OpenConsole 两个宿主。
+    /// </summary>
+    private static readonly Dictionary<string, string[]> AliasTable = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["wechat.exe"] = ["weixin.exe"],
+        ["weixin.exe"] = ["wechat.exe"],
+        ["windowsterminal.exe"] = ["wt.exe", "openconsole.exe"],
+        ["wt.exe"] = ["windowsterminal.exe", "openconsole.exe"],
+        ["openconsole.exe"] = ["windowsterminal.exe", "wt.exe"],
+    };
+
     public static List<string> Normalize(IEnumerable<string>? names)
     {
         var list = new List<string>();
@@ -220,17 +226,23 @@ internal static class ProcessNames
             return list;
         }
 
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 别名同源的写法算同一条：先排 wechat.exe 再填 weixin.exe 不该变成两条。
+        var covered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var raw in names)
         {
             var name = NormalizeOne(raw);
-            if (name.Length == 0 || !seen.Add(name))
+            if (name.Length == 0 || !covered.Add(name))
             {
                 continue;
             }
 
+            foreach (var alias in AliasesOf(name))
+            {
+                covered.Add(alias);
+            }
+
             list.Add(name);
-            if (list.Count >= 40)
+            if (list.Count >= MaxEntries)
             {
                 break;
             }
@@ -249,9 +261,13 @@ internal static class ProcessNames
         return Normalize(text.Split(['\r', '\n', ',', '，', ';', '；'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
-    private static string NormalizeOne(string raw)
+    /// <summary>
+    /// 单条归一化：去引号、去掉粘贴进来的完整路径（C:\Program Files\Foo\foo.exe 也能直接用）、
+    /// 缺后缀补 .exe，并挡掉非法字符。返回空串表示这条输入无效。
+    /// </summary>
+    public static string NormalizeOne(string? raw)
     {
-        var text = raw.Trim().Trim('"');
+        var text = (raw ?? "").Trim().Trim('"');
         if (text.Length == 0 || text.Length > 260)
         {
             return "";
@@ -269,5 +285,46 @@ internal static class ProcessNames
         }
 
         return text;
+    }
+
+    /// <summary>该进程名同源的其它写法，供「已排除」状态判断与匹配扩展共用。</summary>
+    public static IReadOnlyList<string> AliasesOf(string? name)
+    {
+        var key = (name ?? "").Trim();
+        return key.Length > 0 && AliasTable.TryGetValue(key, out var aliases) ? aliases : [];
+    }
+
+    /// <summary>把名单展开成「名字 + 别名」的集合，剪贴板拦截时一次判定即可。</summary>
+    public static HashSet<string> ExpandSet(IEnumerable<string>? names)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (names == null)
+        {
+            return set;
+        }
+
+        foreach (var name in names)
+        {
+            var key = (name ?? "").Trim();
+            if (key.Length == 0)
+            {
+                continue;
+            }
+
+            set.Add(key);
+            foreach (var alias in AliasesOf(key))
+            {
+                set.Add(alias);
+            }
+        }
+
+        return set;
+    }
+
+    /// <summary>名单里是否已包含这个程序（别名同源也算），设置页据此点亮/置灰按钮。</summary>
+    public static bool CoveredBy(IEnumerable<string>? names, string? proc)
+    {
+        var key = (proc ?? "").Trim();
+        return key.Length > 0 && ExpandSet(names).Contains(key);
     }
 }

@@ -93,7 +93,6 @@ public sealed class AppHost
         // 否则本应用没有主窗口，用户将再也无法打开托盘菜单（设置/退出都不可达）。
         _message.TaskbarCreated += () => _queue.TryEnqueue(() => _tray.ReAdd());
         _osd = new OsdWindow();
-        _osd.SetPosition(settings.OsdPosition);
         _osd.SetTargetDisplay(settings.OsdDisplay);
         _osd.SetEnabled(settings.ShowOsd);
         _hardwareMonitor = new HardwareMonitorService();

@@ -79,7 +79,7 @@
                     <Setter Property="Background" Value="{ThemeResource OverlayGlassBrush}"/>
                     <Setter Property="BorderBrush" Value="{ThemeResource OverlayGlassBorderBrush}"/>
                     <Setter Property="BorderThickness" Value="1"/>
-                    <Setter Property="CornerRadius" Value="14"/>
+                    <Setter Property="CornerRadius" Value="{StaticResource RadiusPill}"/>
                     <Setter Property="Padding" Value="5,3"/>
                 </Style>
 
@@ -256,14 +256,11 @@
                 </Style>
 
                 <!-- 提示条键帽 -->
-                <Style x:Key="HintKeycap" TargetType="Border">
+                <Style x:Key="HintKeycap" TargetType="Border" BasedOn="{StaticResource AppKeycapStyle}">
                     <Setter Property="Background" Value="{ThemeResource OverlayKeycapBrush}"/>
                     <Setter Property="BorderBrush" Value="{ThemeResource OverlayGlassBorderBrush}"/>
-                    <Setter Property="BorderThickness" Value="1"/>
-                    <Setter Property="CornerRadius" Value="5"/>
                     <Setter Property="Padding" Value="5,0.5"/>
                     <Setter Property="MinWidth" Value="18"/>
-                    <Setter Property="VerticalAlignment" Value="Center"/>
                 </Style>
                 <Style x:Key="HintKeyText" TargetType="TextBlock">
                     <Setter Property="FontSize" Value="10.5"/>
@@ -303,7 +300,7 @@
             <Border x:Name="DimBottom" Background="#59000000"/>
             <Border x:Name="Box" BorderBrush="{ThemeResource OverlayBlueBrush}" BorderThickness="2"/>
             <Border x:Name="SizeHost" Background="{ThemeResource OverlayPanelBrush}" BorderBrush="{ThemeResource OverlayGlassBorderBrush}" BorderThickness="1"
-                    CornerRadius="8" Padding="8,3,9,3" Visibility="Collapsed">
+                    CornerRadius="{StaticResource RadiusField}" Padding="8,3,9,3" Visibility="Collapsed">
                 <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
                     <Path Width="10" Height="10" Stretch="None" Stroke="{ThemeResource OverlayBlueBrush}" StrokeThickness="1.4"
                           StrokeLineJoin="Round" VerticalAlignment="Center"
@@ -358,9 +355,9 @@
             <!-- 放大镜/取色器 -->
             <Border x:Name="Loupe" Visibility="Collapsed" IsHitTestVisible="False" Width="154">
                 <Grid>
-                    <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,7,0,-7"/>
-                    <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
-                    <Border Background="{ThemeResource OverlayGlassBrush}" BorderBrush="{ThemeResource OverlayGlassBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="7,7,7,6">
+                    <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="{StaticResource RadiusPill}" Margin="0,7,0,-7"/>
+                    <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="{StaticResource RadiusPill}" Margin="0,3,0,-3"/>
+                    <Border Background="{ThemeResource OverlayGlassBrush}" BorderBrush="{ThemeResource OverlayGlassBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource RadiusPill}" Padding="7,7,7,6">
                         <Grid>
                             <Border Style="{StaticResource GlassHighlight}" Margin="10,0,10,0"/>
                             <StackPanel Spacing="4">
@@ -403,13 +400,13 @@
             <!-- 条码/二维码智能识别浮动卡片 -->
             <Border x:Name="BarcodeCard" Visibility="Collapsed" Canvas.Left="0" Canvas.Top="0">
                 <Grid>
-                    <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="12" Margin="0,6,0,-6"/>
-                    <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="12" Margin="0,2,0,-2"/>
-                    <Border Background="{ThemeResource OverlayGlassBrush}" BorderBrush="{ThemeResource OverlayGlassBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="9,5,7,5">
+                    <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="{StaticResource RadiusCard}" Margin="0,6,0,-6"/>
+                    <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="{StaticResource RadiusCard}" Margin="0,2,0,-2"/>
+                    <Border Background="{ThemeResource OverlayGlassBrush}" BorderBrush="{ThemeResource OverlayGlassBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource RadiusCard}" Padding="9,5,7,5">
                         <Grid>
                             <Border Style="{StaticResource GlassHighlight}" Margin="10,0,10,0"/>
                             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <Border Width="24" Height="24" CornerRadius="7" Background="{ThemeResource OverlayBlueBrush}" VerticalAlignment="Center">
+                                <Border Width="24" Height="24" CornerRadius="{StaticResource RadiusButton}" Background="{ThemeResource OverlayBlueBrush}" VerticalAlignment="Center">
                                     <Path Width="12" Height="12" Stretch="None" Stroke="White" StrokeThickness="1.5" StrokeLineJoin="Round"
                                           HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Data="M 1.5,4 V 2.5 A 1,1 0 0 1 2.5,1.5 H 4 M 8,1.5 H 9.5 A 1,1 0 0 1 10.5,2.5 V 4 M 10.5,8 V 9.5 A 1,1 0 0 1 9.5,10.5 H 8 M 4,10.5 H 2.5 A 1,1 0 0 1 1.5,9.5 V 8 M 4,4 H 8 V 8 H 4 Z"/>
@@ -437,8 +434,8 @@
             <StackPanel x:Name="Toolbar" Orientation="Vertical" Visibility="Collapsed">
                 <Border x:Name="MainBar" HorizontalAlignment="Center">
                     <Grid>
-                        <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,8,0,-8"/>
-                        <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
+                        <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="{StaticResource RadiusPill}" Margin="0,8,0,-8"/>
+                        <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="{StaticResource RadiusPill}" Margin="0,3,0,-3"/>
                         <Border Style="{StaticResource OverlayCapsule}" Padding="7,3">
                             <Grid>
                                 <Border Style="{StaticResource GlassHighlight}" Margin="12,0,12,0"/>
@@ -551,8 +548,8 @@
                 <!-- 二级标注参数微调条 -->
                 <Border x:Name="StyleBar" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,7,0,0">
                     <Grid>
-                        <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="14" Margin="0,8,0,-8"/>
-                        <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="14" Margin="0,3,0,-3"/>
+                        <Border Background="{ThemeResource OverlayShadowFarBrush}" CornerRadius="{StaticResource RadiusPill}" Margin="0,8,0,-8"/>
+                        <Border Background="{ThemeResource OverlayShadowNearBrush}" CornerRadius="{StaticResource RadiusPill}" Margin="0,3,0,-3"/>
                         <Border Style="{StaticResource OverlayCapsule}" Padding="5,3">
                             <Grid>
                                 <Border Style="{StaticResource GlassHighlight}"/>

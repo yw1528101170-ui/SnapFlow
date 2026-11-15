@@ -216,6 +216,24 @@ internal static class OverlayGdi
         }
     }
 
+    /// <summary>任意方向的线性渐变填充（霓虹色条靠它做左右串色）。</summary>
+    internal static void FillPathLinear(IntPtr g, IntPtr path, uint from, uint to, float x0, float y0, float x1, float y1)
+    {
+        if (MathF.Abs(x1 - x0) < 0.01f && MathF.Abs(y1 - y0) < 0.01f)
+        {
+            FillPath(g, path, from);
+            return;
+        }
+
+        var p1 = new PointF(x0, y0);
+        var p2 = new PointF(x1, y1);
+        if (GdipCreateLineBrush(ref p1, ref p2, from, to, WrapModeTile, out var brush) == 0)
+        {
+            GdipFillPath(g, brush, path);
+            GdipDeleteBrush(brush);
+        }
+    }
+
     internal static void StrokePath(IntPtr g, IntPtr path, uint argb, float width, bool round = false)
     {
         if (argb >> 24 == 0)
@@ -418,46 +436,55 @@ internal static class OverlayGdi
     private static readonly Dictionary<string, IntPtr> FamilyCache = [];
     private static readonly Dictionary<string, IntPtr> FontCache = [];
 
+    /// <summary>字体缓存访问闸：OSD 渲染线程、托盘菜单与 Toast（UI 线程）都会取字体，Dictionary 非线程安全。</summary>
+    private static readonly object FontGate = new();
+
     internal static IntPtr ResolveFamily(string name)
     {
-        if (FamilyCache.TryGetValue(name, out var cached))
+        lock (FontGate)
         {
-            return cached;
-        }
+            if (FamilyCache.TryGetValue(name, out var cached))
+            {
+                return cached;
+            }
 
-        var family = IntPtr.Zero;
-        if (GdipCreateFontFamilyFromName(name, IntPtr.Zero, out var created) != 0)
-        {
-            created = IntPtr.Zero;
-        }
+            var family = IntPtr.Zero;
+            if (GdipCreateFontFamilyFromName(name, IntPtr.Zero, out var created) != 0)
+            {
+                created = IntPtr.Zero;
+            }
 
-        if (created != IntPtr.Zero)
-        {
-            family = created;
-        }
+            if (created != IntPtr.Zero)
+            {
+                family = created;
+            }
 
-        FamilyCache[name] = family;
-        return family;
+            FamilyCache[name] = family;
+            return family;
+        }
     }
 
     /// <summary>按「像素高度」创建字体，带字体族回退；结果按字号缓存，避免逐帧重建。</summary>
     internal static IntPtr Font(string family, float px, bool bold)
     {
         string key = $"{family}|{px:0.##}|{(bold ? 1 : 0)}";
-        if (FontCache.TryGetValue(key, out var cached) && cached != IntPtr.Zero)
+        lock (FontGate)
         {
-            return cached;
-        }
+            if (FontCache.TryGetValue(key, out var cached) && cached != IntPtr.Zero)
+            {
+                return cached;
+            }
 
-        IntPtr font = IntPtr.Zero;
-        var handle = ResolveFamily(family);
-        if (handle != IntPtr.Zero && GdipCreateFont(handle, px, bold ? 1 : 0, UnitPixel, out var created) == 0)
-        {
-            font = created;
-        }
+            IntPtr font = IntPtr.Zero;
+            var handle = ResolveFamily(family);
+            if (handle != IntPtr.Zero && GdipCreateFont(handle, px, bold ? 1 : 0, UnitPixel, out var created) == 0)
+            {
+                font = created;
+            }
 
-        FontCache[key] = font;
-        return font;
+            FontCache[key] = font;
+            return font;
+        }
     }
 
     /// <summary>数字优先用 Segoe UI Variable Display，中文回退到微软雅黑。</summary>
@@ -697,6 +724,10 @@ internal static class OverlayGdi
     [DllImport("gdiplus.dll")]
     internal static extern int GdipDrawImage(IntPtr graphics, IntPtr image, float x, float y);
 
+    /// <summary>把图像缩放画到指定矩形：液态玻璃在展开动画里靠它把上一张玻璃拉伸到当前高度。</summary>
+    [DllImport("gdiplus.dll")]
+    internal static extern int GdipDrawImageRect(IntPtr graphics, IntPtr image, float x, float y, float width, float height);
+
     [DllImport("gdiplus.dll")]
     internal static extern int GdipCreateTexture2I(IntPtr image, int wrapMode, float x, float y, float width, float height, out IntPtr texture);
 
@@ -820,6 +851,74 @@ internal sealed class LayeredCanvas : IDisposable
             _height = height;
             OverlayGdi.Clear(_graphics);
             return true;
+        }
+        finally
+        {
+            NativeMethods.ReleaseDC(IntPtr.Zero, screenDc);
+        }
+    }
+
+    private int _maxSeenHeight;
+
+    /// <summary>
+    /// 与 <see cref="Ensure"/> 语义一致，但画布"只增不缩"：已分配高度足够时直接复用
+    /// （多余行保持透明、不参与呈现）。配合 <see cref="Present(IntPtr,int,int,int)"/> 的
+    /// 可视高度参数，展开/收起动画期间 bufferHeight 逐帧变化就不再逐帧重建 DIB
+    /// （原来每次展开约 25~30 次 CreateCompatibleDC + CreateDIBSection + GDI+ 全量重建）。
+    /// 重建时按 1.5 倍预留，避免增长过程本身也反复重建。
+    /// 仅 OSD 自用；<see cref="Ensure"/> 的整位图语义（GlassSurface.Upload 整块拷入）不受影响。
+    /// </summary>
+    public bool EnsureAtLeast(int width, int height)
+    {
+        if (width < 1 || height < 1)
+        {
+            return false;
+        }
+
+        if (height > _maxSeenHeight)
+        {
+            _maxSeenHeight = height;
+        }
+
+        if (_graphics != IntPtr.Zero && width == _width && _height >= height)
+        {
+            OverlayGdi.Clear(_graphics);
+            return true;
+        }
+
+        // 重建时预留 50% 高度余量：展开动画从矮长高时最多再触发一两次重建。
+        return Ensure(width, Math.Max(height, height + height / 2));
+    }
+
+    /// <summary>呈现画布的顶部 <paramref name="visibleHeight"/> 行（多余分配行保持透明不参与合成）。</summary>
+    public bool Present(IntPtr hwnd, int x, int y, int visibleHeight)
+    {
+        if (_graphics == IntPtr.Zero || _memDc == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        var height = Math.Clamp(visibleHeight, 1, _height);
+        var screenDc = NativeMethods.GetDC(IntPtr.Zero);
+        if (screenDc == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        try
+        {
+            var ptSrc = new NativeMethods.Point { X = 0, Y = 0 };
+            var ptDst = new NativeMethods.Point { X = x, Y = y };
+            var size = new NativeMethods.Size { Cx = _width, Cy = height };
+            var blend = new NativeMethods.BlendFunction
+            {
+                BlendOp = NativeMethods.AcSrcOver,
+                BlendFlags = 0,
+                SourceConstantAlpha = 255,
+                AlphaFormat = NativeMethods.AcSrcAlpha,
+            };
+
+            return NativeMethods.UpdateLayeredWindow(hwnd, screenDc, ref ptDst, ref size, _memDc, ref ptSrc, 0, ref blend, NativeMethods.UlwAlpha);
         }
         finally
         {

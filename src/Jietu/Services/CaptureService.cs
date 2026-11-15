@@ -885,12 +885,20 @@ internal static class CaptureService
                 if (sourceDesc.Format == FormatFloat16)
                 {
                     // HDR（scRGB）帧：按当前显示器的 SDR 白点归一化后再映射，避免 SDR 窗口白底一片死白。
+                    // 与 SDR 路径一致复用 _frameCache，省掉 4K 一帧约 33MB 的重复分配。
+                    var hdrScratch = _frameCache;
+                    if (hdrScratch == null || hdrScratch.Length != width * height * 4)
+                    {
+                        hdrScratch = new byte[width * height * 4];
+                    }
+
                     pixels = HdrTone.FromFloat16(
                         mapped.Data,
                         width,
                         height,
                         (int)mapped.RowPitch,
-                        HdrDisplay.SdrWhiteLevel(monitor.Handle));
+                        HdrDisplay.SdrWhiteLevel(monitor.Handle),
+                        hdrScratch);
                 }
                 else
                 {
@@ -1132,7 +1140,19 @@ internal static class CaptureService
         Marshal.ThrowExceptionForHR(hr);
         var iid = DxgiDeviceId;
         hr = Marshal.QueryInterface(device, in iid, out var dxgi);
-        Marshal.ThrowExceptionForHR(hr);
+        if (hr < 0)
+        {
+            // QI 失败：device/context 还没被任何字段收养，必须在这里补引用释放，
+            // 否则两个原生 COM 接口指针随异常泄漏。
+            if (context != IntPtr.Zero)
+            {
+                Marshal.Release(context);
+            }
+
+            Marshal.Release(device);
+            Marshal.ThrowExceptionForHR(hr);
+        }
+
         try
         {
             hr = NativeMethods.CreateDirect3D11DeviceFromDXGIDevice(dxgi, out var winrtPointer);

@@ -46,9 +46,10 @@ internal sealed class ClipIngestService
         }
 
         var added = _store.TryAdd(ClipKind.Image, null, written, hash, source);
-        if (written != null && added != null && added.ImagePath != written)
+        // 与 AddCapturedAsync 对齐：TryAdd 返回 null（同 hash 已是最新）或命中的
+        // 记录指向别的文件时，刚写的副本都是孤儿，及时删掉。
+        if (written != null && (added == null || added.ImagePath != written))
         {
-            // 命中已有记录（旧重复被重新置顶）：刚写的副本成了孤儿，删掉。
             try
             {
                 File.Delete(written);

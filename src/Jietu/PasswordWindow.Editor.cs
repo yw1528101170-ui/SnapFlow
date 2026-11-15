@@ -71,9 +71,22 @@ public sealed partial class PasswordWindow
         TitleBox.Focus(FocusState.Programmatic);
     }
 
-    /// <summary>编辑态 → 详情态（已有条目）或直接收起（草稿）。</summary>
-    private void OnCancelEdit(object sender, RoutedEventArgs e)
+    /// <summary>编辑态 → 详情态（已有条目）或直接收起（草稿）。有未保存修改时先确认。</summary>
+    private async void OnCancelEdit(object sender, RoutedEventArgs e)
     {
+        // 只在编辑态且确实改过东西时拦截：加载过程产生的临时值不算。
+        if (_editorVisible && !_editorLoading && EditorSignature() != _cleanSignature)
+        {
+            var confirmed = await ShowAppConfirmAsync(
+                "放弃未保存的修改？",
+                "这次编辑还没有保存，放弃后无法恢复。",
+                "放弃修改");
+            if (!confirmed)
+            {
+                return;
+            }
+        }
+
         if (_editingExisting && _selectedId != null)
         {
             var entry = _vault.Data?.Entries.FirstOrDefault(en => en.Id == _selectedId);
@@ -105,6 +118,10 @@ public sealed partial class PasswordWindow
         PasswordTextBox.Text = entry.Password;
         UrlBox.Text = entry.Url;
         NotesBox.Text = entry.Notes;
+        TotpBox.Text = entry.TotpSecret;
+        EntryKindCombo.SelectedIndex = entry.Kind == "note" ? 1 : 0;
+        SyncCredentialVisibility();
+        RefreshEditorAux();
         _editorLoading = false;
     }
 
@@ -117,13 +134,17 @@ public sealed partial class PasswordWindow
         DetailPasswordRow.Visibility = entry.Password.Length == 0 && entry.Kind == "note"
             ? Visibility.Collapsed
             : Visibility.Visible;
+        DetailTotpValue.Text = entry.TotpSecret.Length == 0
+            ? ""
+            : $"••••••••（{entry.TotpSecret.Length} 位密钥）";
+        DetailTotpRow.Visibility = entry.TotpSecret.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         DetailUrlValue.Text = entry.Url;
         DetailUrlRow.Visibility = entry.Url.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         DetailNotes.Text = entry.Notes;
         DetailNotesRow.Visibility = entry.Notes.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
 
         // 发丝分隔线挂在每行底边：把最后一个可见行的底线收掉，避免卡片底部出现孤线。
-        var rows = new[] { DetailUserRow, DetailPasswordRow, DetailUrlRow, DetailNotesRow };
+        var rows = new[] { DetailUserRow, DetailPasswordRow, DetailTotpRow, DetailUrlRow, DetailNotesRow };
         Border? last = null;
         foreach (var row in rows)
         {
@@ -161,6 +182,8 @@ public sealed partial class PasswordWindow
 
     private void OnCopyDetailUrl(object sender, RoutedEventArgs e) => CopySecret(UrlBox.Text, "网址");
 
+    private void OnCopyTotp(object sender, RoutedEventArgs e) => CopySecret(TotpBox.Text.Trim(), "两步验证密钥");
+
     private void ClearEditor()
     {
         _editorLoading = true;
@@ -176,7 +199,11 @@ public sealed partial class PasswordWindow
         PasswordTextBox.Text = "";
         UrlBox.Text = "";
         NotesBox.Text = "";
+        TotpBox.Text = "";
+        EntryKindCombo.SelectedIndex = 0;
         HideReveal();
+        SyncCredentialVisibility();
+        RefreshEditorAux();
         _editorLoading = false;
         MarkEditorClean();
         SyncLayout();
@@ -197,6 +224,169 @@ public sealed partial class PasswordWindow
             DetailInitial.Text = AvatarFor(title).Initial;
         }
 
+        RefreshEditorAux();
+
+        UnsavedBadge.Visibility = EditorSignature() == _cleanSignature
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
+    /// <summary>
+    /// 编辑器辅助 UI 的统一刷新：密码强度条、TOTP 校验提示。
+    /// 从 OnEditorDirty 与字段装载两处调用，保证任何输入路径下都同步。
+    /// </summary>
+    private void RefreshEditorAux()
+    {
+        UpdatePasswordStrength();
+        UpdateTotpHint();
+    }
+
+    /// <summary>
+    /// 实时密码强度：与密码体检同一口径（<see cref="PasswordGenerator.EstimatePasswordEntropy"/>）。
+    /// 分级：弱（&lt;50 bit 或长度 &lt;10）/ 一般（&lt;70）/ 强（&lt;100）/ 极强。
+    /// </summary>
+    private void UpdatePasswordStrength()
+    {
+        var password = CurrentPassword;
+        if (password.Length == 0)
+        {
+            EditorStrengthPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var (bits, _) = PasswordGenerator.EstimatePasswordEntropy(password);
+        var weakByLength = password.Length < 10;
+        string label;
+        Windows.UI.Color color;
+        int percent;
+        if (weakByLength || bits < 50)
+        {
+            label = weakByLength ? "弱 · 建议至少 10 个字符" : "弱 · 容易被暴力破解";
+            color = Windows.UI.Color.FromArgb(255, 255, 93, 93);
+            percent = 25;
+        }
+        else if (bits < 70)
+        {
+            label = "一般 · 建议再加长一些";
+            color = Windows.UI.Color.FromArgb(255, 255, 185, 0);
+            percent = 50;
+        }
+        else if (bits < 100)
+        {
+            label = "强";
+            color = Windows.UI.Color.FromArgb(255, 108, 203, 95);
+            percent = 75;
+        }
+        else
+        {
+            label = "极强";
+            color = Windows.UI.Color.FromArgb(255, 76, 194, 255);
+            percent = 100;
+        }
+
+        EditorStrengthPanel.Visibility = Visibility.Visible;
+        EditorStrengthBar.Value = percent;
+        EditorStrengthBar.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
+        EditorStrengthText.Text = $"{label}（约 {Math.Round(bits)} bit）";
+        EditorStrengthText.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
+    }
+
+    /// <summary>TOTP 密钥即时校验：非空但不是合法 Base32 时给出行内提示（不阻断保存）。</summary>
+    private void UpdateTotpHint()
+    {
+        var raw = TotpBox.Text.Trim();
+        if (raw.Length == 0)
+        {
+            TotpHint.Visibility = Visibility.Collapsed;
+            TotpHint.Text = "";
+            return;
+        }
+
+        if (Totp.DecodeBase32(raw).Length > 0)
+        {
+            TotpHint.Visibility = Visibility.Visible;
+            TotpHint.Text = "✓ 密钥格式正确，保存后可在条目详情里复制。";
+        }
+        else
+        {
+            TotpHint.Visibility = Visibility.Visible;
+            TotpHint.Text = "⚠ 不是合法的 Base32 密钥：只应包含字母 A-Z、数字 2-7（空格与连字符会被忽略）。";
+        }
+    }
+
+    /// <summary>条目类型切换：登录显示凭据列；安全备注收起凭据列、备注区放大。</summary>
+    private void OnEntryKindChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_xamlReady || _editorLoading)
+        {
+            return;
+        }
+
+        SyncCredentialVisibility();
+        // 类型变化本身也算一次修改（影响保存的 Kind 字段）。
+        UnsavedBadge.Visibility = EditorSignature() == _cleanSignature
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
+    private void SyncCredentialVisibility()
+    {
+        var isNote = EntryKindCombo.SelectedIndex == 1;
+        CredentialFields.Visibility = isNote ? Visibility.Collapsed : Visibility.Visible;
+        EditorCol2.Width = isNote ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        EditorColumns.ColumnSpacing = isNote ? 0 : 16;
+        // 备注类型下备注就是主体，给更高的输入区。
+        NotesBox.MinHeight = isNote ? 160 : 56;
+        NotesGroupLabel.Text = isNote ? "备注内容" : "附加信息";
+    }
+
+    /// <summary>生成器选项变化时刷新熵预览文案。</summary>
+    private void OnGenOptionChanged(object sender, RoutedEventArgs e) => RefreshGeneratePreview();
+
+    private void OnGenOptionChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        => RefreshGeneratePreview();
+
+    private void OnGenerateFlyoutOpening(object sender, object e) => RefreshGeneratePreview();
+
+    private void RefreshGeneratePreview()
+    {
+        if (GenEntropyText == null)
+        {
+            return;
+        }
+
+        var bits = PasswordGenerator.EstimateEntropyBits(
+            (int)GenLengthSlider.Value,
+            GenLowerCheck.IsChecked == true,
+            GenUpperCheck.IsChecked == true,
+            GenDigitsCheck.IsChecked == true,
+            GenSymbolsCheck.IsChecked == true);
+        GenEntropyText.Text = bits > 0
+            ? $"预计强度 ≈ {Math.Round(bits)} bit（与保存后的体检口径一致）"
+            : "至少选择一类字符";
+    }
+
+    /// <summary>按 flyout 选项生成密码并填入；显隐状态归一到掩码框。</summary>
+    private void OnGeneratePassword(object sender, RoutedEventArgs e)
+    {
+        var lower = GenLowerCheck.IsChecked == true;
+        var upper = GenUpperCheck.IsChecked == true;
+        var digits = GenDigitsCheck.IsChecked == true;
+        var symbols = GenSymbolsCheck.IsChecked == true;
+        if (!lower && !upper && !digits && !symbols)
+        {
+            GenEntropyText.Text = "至少选择一类字符";
+            return;
+        }
+
+        var password = PasswordGenerator.Generate((int)GenLengthSlider.Value, lower, upper, digits, symbols);
+        GenerateFlyout.Hide();
+        // 统一回到掩码框再写入，避免"生成时正显示明文"的旧值竞态。
+        HideReveal();
+        _editorLoading = true;
+        PasswordBox.Password = password;
+        _editorLoading = false;
+        UpdatePasswordStrength();
         UnsavedBadge.Visibility = EditorSignature() == _cleanSignature
             ? Visibility.Collapsed
             : Visibility.Visible;
@@ -210,10 +400,12 @@ public sealed partial class PasswordWindow
 
     private string EditorSignature() => string.Join(
         '\u0001',
+        EntryKindCombo.SelectedIndex,
         TitleBox.Text,
         UsernameBox.Text,
         CurrentPassword,
         UrlBox.Text,
+        TotpBox.Text,
         NotesBox.Text);
 
     private VaultEntry CollectEditor()
@@ -222,13 +414,14 @@ public sealed partial class PasswordWindow
         return new VaultEntry
         {
             Id = _editingExisting && _selectedId != null ? _selectedId : Guid.NewGuid().ToString("N"),
-            Kind = "login",
+            Kind = EntryKindCombo.SelectedIndex == 1 ? "note" : "login",
             Title = TitleBox.Text.Trim(),
             // 「显示密码」态下明文在 TextBox 里，PasswordBox 是旧的，取可见的那个。
             Username = UsernameBox.Text.Trim(),
             Password = PasswordBox.Visibility == Visibility.Visible ? PasswordBox.Password : PasswordTextBox.Text,
             Url = UrlBox.Text.Trim(),
-            TotpSecret = "",
+            // TOTP：去空格并统一大写（Base32 不区分大小写，入库前归一方便体检与展示）。
+            TotpSecret = TotpBox.Text.Trim().Replace(" ", "").Replace("-", "").ToUpperInvariant(),
             Tags = [],
             Notes = NotesBox.Text,
             CreatedUtc = now,
@@ -277,11 +470,10 @@ public sealed partial class PasswordWindow
         {
             var previous = data.Entries[index];
 
-            // 编辑器没有 TOTP / 标签 / 关键账号标记的输入控件：
+            // 编辑器没有「标签」「关键账号标记」的输入控件：
             // 这些字段从被覆盖的旧版本原样继承，否则一次普通编辑就会
-            // 把导入时带进来的 2FA 种子、标签等数据静默清空。
-            entry.Kind = previous.Kind;
-            entry.TotpSecret = previous.TotpSecret;
+            // 把导入时带进来的标签等数据静默清空。
+            // Kind 与 TotpSecret 已有真实控件来源（类型选择 / TOTP 输入框），以表单为准。
             entry.Tags = [.. previous.Tags];
             entry.CriticalOverride = previous.CriticalOverride;
 

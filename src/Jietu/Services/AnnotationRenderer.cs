@@ -162,6 +162,12 @@ internal static class AnnotationRenderer
                 if (hits[i] > x1) x1 = hits[i];
             }
 
+            // 图形整体落在位图左右两侧之外：钳制后 x0==x1 会在边缘列涂出伪影色带。
+            if (x1 < 0 || x0 >= width)
+            {
+                continue;
+            }
+
             x0 = Math.Clamp(x0, 0, width - 1);
             x1 = Math.Clamp(x1, 0, width - 1);
             if (x1 >= x0)
@@ -239,6 +245,13 @@ internal static class AnnotationRenderer
             }
 
             var dxMax = (int)Math.Sqrt(limit - dy2);
+            // 图形整体落在位图左右两侧之外：钳制后 x0==x1 会在边缘列涂出
+            // 高度为整行范围的伪影色带，直接跳过该行。
+            if (cx + dxMax < 0 || cx - dxMax >= width)
+            {
+                continue;
+            }
+
             var x0 = Math.Clamp(cx - dxMax, 0, width - 1);
             var x1 = Math.Clamp(cx + dxMax, 0, width - 1);
             if (x1 >= x0)
@@ -567,6 +580,13 @@ internal static class AnnotationRenderer
             }
 
             var dxMax = (int)Math.Sqrt(limit - dy2);
+            // 图形整体落在位图左右两侧之外：钳制后 x0==x1 会在边缘列涂出
+            // 高度为整行范围的伪影色带，直接跳过该行。
+            if (cx + dxMax < 0 || cx - dxMax >= width)
+            {
+                continue;
+            }
+
             var x0 = Math.Clamp(cx - dxMax, 0, width - 1);
             var x1 = Math.Clamp(cx + dxMax, 0, width - 1);
             if (x1 >= x0)
@@ -584,76 +604,152 @@ internal static class AnnotationRenderer
             return;
         }
 
-        var info = new NativeMethods.BitmapInfo
-        {
-            Header = new NativeMethods.BitmapInfoHeader
-            {
-                BiSize = 40,
-                BiWidth = width,
-                BiHeight = -height,
-                BiPlanes = 1,
-                BiBitCount = 32,
-                BiCompression = NativeMethods.BiRgb,
-            },
-        };
         var screen = NativeMethods.GetDC(IntPtr.Zero);
-        var dib = NativeMethods.CreateDIBSection(screen, ref info, 0, out var bits, IntPtr.Zero, 0);
-        var dc = NativeMethods.CreateCompatibleDC(screen);
-        NativeMethods.ReleaseDC(IntPtr.Zero, screen);
-        if (dib == IntPtr.Zero || dc == IntPtr.Zero || bits == IntPtr.Zero)
-        {
-            if (dib != IntPtr.Zero) NativeMethods.DeleteObject(dib);
-            if (dc != IntPtr.Zero) NativeMethods.DeleteDC(dc);
-            return;
-        }
-
-        Marshal.Copy(pixels, 0, bits, pixels.Length);
-        var previous = NativeMethods.SelectObject(dc, dib);
         try
         {
-            SetBkMode(dc, 1);
-            foreach (var stroke in texts)
+            // 先量后画：只为文字包围盒建小 DIB，避免整图两趟 Marshal.Copy
+            // （4K 下是 33MB×2 的 LOH 拷贝，而文字通常只占小范围）。
+            var measureDc = NativeMethods.CreateCompatibleDC(screen);
+            try
             {
-                var isEmoji = stroke.Kind == AnnotateKind.Emoji;
-                // 序号字号与遮罩预览共用 NumberBadgeMetrics；其它文字沿用 FontPx（缺省 28）。
-                var textPx = stroke.Kind == AnnotateKind.Number
-                    ? NumberBadgeMetrics(stroke.FontPx).FontSize
-                    : stroke.FontPx > 0 ? stroke.FontPx : 28;
-                var fontPx = isEmoji ? -32 : -textPx;
-                var fontName = isEmoji ? "Segoe UI Emoji" : "Microsoft YaHei";
-                var font = CreateFont(fontPx, 0, 0, 0, stroke.Kind == AnnotateKind.Number ? 700 : 400, 0, 0, 0, 1, 0, 0, 5, 0, fontName);
-                var oldFont = NativeMethods.SelectObject(dc, font);
-                try
+                var layout = new List<(AnnotateStroke Stroke, int X, int Y, int Ex, int Ey)>(texts.Count);
+                var minX = int.MaxValue;
+                var minY = int.MaxValue;
+                var maxX = int.MinValue;
+                var maxY = int.MinValue;
+                foreach (var stroke in texts)
                 {
+                    var isEmoji = stroke.Kind == AnnotateKind.Emoji;
+                    // 序号字号与遮罩预览共用 NumberBadgeMetrics；其它文字沿用 FontPx（缺省 28）。
+                    var textPx = stroke.Kind == AnnotateKind.Number
+                        ? NumberBadgeMetrics(stroke.FontPx).FontSize
+                        : stroke.FontPx > 0 ? stroke.FontPx : 28;
+                    var fontPx = isEmoji ? -32 : -textPx;
+                    var fontName = isEmoji ? "Segoe UI Emoji" : "Microsoft YaHei";
+                    var font = CreateFont(fontPx, 0, 0, 0, stroke.Kind == AnnotateKind.Number ? 700 : 400, 0, 0, 0, 1, 0, 0, 5, 0, fontName);
+                    var oldFont = NativeMethods.SelectObject(measureDc, font);
                     var text = stroke.Text ?? "";
+                    var measured = GetTextExtentPoint32(measureDc, text, text.Length, out var extent);
+                    NativeMethods.SelectObject(measureDc, oldFont);
+                    NativeMethods.DeleteObject(font);
+                    if (!measured)
+                    {
+                        continue;
+                    }
+
                     var x = stroke.Points[0].X;
                     var y = stroke.Points[0].Y;
-                    var color = (uint)(stroke.R | (stroke.G << 8) | (stroke.B << 16));
-                    if (stroke.Kind == AnnotateKind.Number && GetTextExtentPoint32(dc, text, text.Length, out var extent))
+                    if (stroke.Kind == AnnotateKind.Number)
                     {
                         x -= extent.Cx / 2;
                         y -= extent.Cy / 2;
-                        var light = (stroke.R * 3) + (stroke.G * 6) + stroke.B > 1600;
-                        color = light ? 0x00111111u : 0x00FFFFFFu;
                     }
 
-                    SetTextColor(dc, color);
-                    TextOut(dc, x, y, text, text.Length);
+                    layout.Add((stroke, x, y, extent.Cx, extent.Cy));
+                    if (x < minX) minX = x;
+                    if (y < minY) minY = y;
+                    if (x + extent.Cx > maxX) maxX = x + extent.Cx;
+                    if (y + extent.Cy > maxY) maxY = y + extent.Cy;
+                }
+
+                // 包围盒与位图无交集：全部文字都画在可见范围外，无事可做。
+                var bx0 = Math.Max(0, minX);
+                var by0 = Math.Max(0, minY);
+                var bx1 = Math.Min(width, maxX);
+                var by1 = Math.Min(height, maxY);
+                if (bx0 >= bx1 || by0 >= by1 || layout.Count == 0)
+                {
+                    return;
+                }
+
+                var bw = bx1 - bx0;
+                var bh = by1 - by0;
+                var info = new NativeMethods.BitmapInfo
+                {
+                    Header = new NativeMethods.BitmapInfoHeader
+                    {
+                        BiSize = 40,
+                        BiWidth = bw,
+                        BiHeight = -bh,
+                        BiPlanes = 1,
+                        BiBitCount = 32,
+                        BiCompression = NativeMethods.BiRgb,
+                    },
+                };
+                var dib = NativeMethods.CreateDIBSection(screen, ref info, 0, out var bits, IntPtr.Zero, 0);
+                var dc = NativeMethods.CreateCompatibleDC(screen);
+                if (dib == IntPtr.Zero || dc == IntPtr.Zero || bits == IntPtr.Zero)
+                {
+                    if (dib != IntPtr.Zero) NativeMethods.DeleteObject(dib);
+                    if (dc != IntPtr.Zero) NativeMethods.DeleteDC(dc);
+                    return;
+                }
+
+                var previous = IntPtr.Zero;
+                try
+                {
+                    // 只拷入/拷回包围盒区域（逐行，源是整图跨度 width、目标是 bw）。
+                    for (var row = 0; row < bh; row++)
+                    {
+                        Marshal.Copy(pixels, ((by0 + row) * width + bx0) * 4, bits + (row * bw * 4), bw * 4);
+                    }
+
+                    previous = NativeMethods.SelectObject(dc, dib);
+                    SetBkMode(dc, 1);
+                    foreach (var (stroke, x, y, _, _) in layout)
+                    {
+                        var isEmoji = stroke.Kind == AnnotateKind.Emoji;
+                        var textPx = stroke.Kind == AnnotateKind.Number
+                            ? NumberBadgeMetrics(stroke.FontPx).FontSize
+                            : stroke.FontPx > 0 ? stroke.FontPx : 28;
+                        var fontPx = isEmoji ? -32 : -textPx;
+                        var fontName = isEmoji ? "Segoe UI Emoji" : "Microsoft YaHei";
+                        var font = CreateFont(fontPx, 0, 0, 0, stroke.Kind == AnnotateKind.Number ? 700 : 400, 0, 0, 0, 1, 0, 0, 5, 0, fontName);
+                        var oldFont = NativeMethods.SelectObject(dc, font);
+                        try
+                        {
+                            var text = stroke.Text ?? "";
+                            var color = (uint)(stroke.R | (stroke.G << 8) | (stroke.B << 16));
+                            if (stroke.Kind == AnnotateKind.Number)
+                            {
+                                var light = (stroke.R * 3) + (stroke.G * 6) + stroke.B > 1600;
+                                color = light ? 0x00111111u : 0x00FFFFFFu;
+                            }
+
+                            SetTextColor(dc, color);
+                            TextOut(dc, x - bx0, y - by0, text, text.Length);
+                        }
+                        finally
+                        {
+                            NativeMethods.SelectObject(dc, oldFont);
+                            NativeMethods.DeleteObject(font);
+                        }
+                    }
+
+                    for (var row = 0; row < bh; row++)
+                    {
+                        Marshal.Copy(bits + (row * bw * 4), pixels, ((by0 + row) * width + bx0) * 4, bw * 4);
+                    }
                 }
                 finally
                 {
-                    NativeMethods.SelectObject(dc, oldFont);
-                    NativeMethods.DeleteObject(font);
+                    if (previous != IntPtr.Zero)
+                    {
+                        NativeMethods.SelectObject(dc, previous);
+                    }
+
+                    NativeMethods.DeleteObject(dib);
+                    NativeMethods.DeleteDC(dc);
                 }
             }
-
-            Marshal.Copy(bits, pixels, 0, pixels.Length);
+            finally
+            {
+                NativeMethods.DeleteDC(measureDc);
+            }
         }
         finally
         {
-            NativeMethods.SelectObject(dc, previous);
-            NativeMethods.DeleteObject(dib);
-            NativeMethods.DeleteDC(dc);
+            NativeMethods.ReleaseDC(IntPtr.Zero, screen);
         }
     }
 
@@ -694,29 +790,45 @@ internal static class AnnotationRenderer
             ));
         }
 
+        // 按行合并"照亮区"区间，只对区间外的连续段调暗：
+        // 原实现 O(W·H·n)（逐像素 × 每个盒子判断），4K 多灯时是千万级分支。
+        var rowSpans = new List<(int Left, int Right)>(boxes.Count);
         for (var y = 0; y < height; y++)
         {
             var row = y * width * 4;
-            for (var x = 0; x < width; x++)
+            rowSpans.Clear();
+            foreach (var b in boxes)
             {
-                var inside = false;
-                for (var i = 0; i < boxes.Count; i++)
+                if (y >= b.Top && y <= b.Bottom)
                 {
-                    var b = boxes[i];
-                    if (x >= b.Left && x <= b.Right && y >= b.Top && y <= b.Bottom)
-                    {
-                        inside = true;
-                        break;
-                    }
+                    rowSpans.Add((b.Left, b.Right));
+                }
+            }
+
+            if (rowSpans.Count == 0)
+            {
+                DimRange(pixels, row, 0, width - 1);
+                continue;
+            }
+
+            rowSpans.Sort(static (p, q) => p.Left.CompareTo(q.Left));
+            var cursor = 0;
+            foreach (var (left, right) in rowSpans)
+            {
+                if (left > cursor)
+                {
+                    DimRange(pixels, row, cursor, Math.Min(left - 1, width - 1));
                 }
 
-                if (!inside)
+                if (right + 1 > cursor)
                 {
-                    var idx = row + (x * 4);
-                    pixels[idx] = (byte)((pixels[idx] * 40) / 100);
-                    pixels[idx + 1] = (byte)((pixels[idx + 1] * 40) / 100);
-                    pixels[idx + 2] = (byte)((pixels[idx + 2] * 40) / 100);
+                    cursor = right + 1;
                 }
+            }
+
+            if (cursor < width)
+            {
+                DimRange(pixels, row, cursor, width - 1);
             }
         }
 
@@ -726,17 +838,57 @@ internal static class AnnotationRenderer
         }
     }
 
-    private static void DrawHighlighter(byte[] pixels, int width, int height, IReadOnlyList<(int X, int Y)> points, byte b, byte g, byte r, int diameter)
+    private static void DimRange(byte[] pixels, int rowStart, int x0, int x1)
     {
-        var radius = Math.Max(2, diameter / 2);
-        var visited = new byte[width * height];
-        for (var i = 1; i < points.Count; i++)
+        for (var x = x0; x <= x1; x++)
         {
-            DrawHighlighterLine(pixels, width, height, points[i - 1], points[i], b, g, r, radius, visited);
+            var idx = rowStart + (x * 4);
+            pixels[idx] = (byte)((pixels[idx] * 40) / 100);
+            pixels[idx + 1] = (byte)((pixels[idx + 1] * 40) / 100);
+            pixels[idx + 2] = (byte)((pixels[idx + 2] * 40) / 100);
         }
     }
 
-    private static void DrawHighlighterLine(byte[] pixels, int width, int height, (int X, int Y) start, (int X, int Y) end, byte b, byte g, byte r, int radius, byte[] visited)
+    private static void DrawHighlighter(byte[] pixels, int width, int height, IReadOnlyList<(int X, int Y)> points, byte b, byte g, byte r, int diameter)
+    {
+        var radius = Math.Max(2, diameter / 2);
+        // 按笔画点集包围盒（外扩半径）分配 visited：全图分配在 4K 下是 8.3MB/笔画的
+        // LOH 大分配，导出路径多笔高亮时会造成明显的 GC 抖动；笔画通常只覆盖小区域。
+        var minX = int.MaxValue;
+        var maxX = int.MinValue;
+        var minY = int.MaxValue;
+        var maxY = int.MinValue;
+        foreach (var p in points)
+        {
+            if (p.X < minX) minX = p.X;
+            if (p.X > maxX) maxX = p.X;
+            if (p.Y < minY) minY = p.Y;
+            if (p.Y > maxY) maxY = p.Y;
+        }
+
+        if (minX > maxX || minY > maxY)
+        {
+            return;
+        }
+
+        var bandLeft = Math.Max(0, minX - radius);
+        var bandTop = Math.Max(0, minY - radius);
+        var bandRight = Math.Min(width - 1, maxX + radius);
+        var bandBottom = Math.Min(height - 1, maxY + radius);
+        if (bandLeft > bandRight || bandTop > bandBottom)
+        {
+            return;
+        }
+
+        var bandWidth = bandRight - bandLeft + 1;
+        var visited = new byte[bandWidth * (bandBottom - bandTop + 1)];
+        for (var i = 1; i < points.Count; i++)
+        {
+            DrawHighlighterLine(pixels, width, height, points[i - 1], points[i], b, g, r, radius, visited, bandLeft, bandTop, bandWidth);
+        }
+    }
+
+    private static void DrawHighlighterLine(byte[] pixels, int width, int height, (int X, int Y) start, (int X, int Y) end, byte b, byte g, byte r, int radius, byte[] visited, int bandLeft, int bandTop, int bandWidth)
     {
         var dx = Math.Abs(end.X - start.X);
         var dy = Math.Abs(end.Y - start.Y);
@@ -747,7 +899,7 @@ internal static class AnnotationRenderer
         var y = start.Y;
         while (true)
         {
-            StampHighlighter(pixels, width, height, x, y, b, g, r, radius, visited);
+            StampHighlighter(pixels, width, height, x, y, b, g, r, radius, visited, bandLeft, bandTop, bandWidth);
             if (x == end.X && y == end.Y)
             {
                 break;
@@ -767,9 +919,10 @@ internal static class AnnotationRenderer
         }
     }
 
-    private static void StampHighlighter(byte[] pixels, int width, int height, int cx, int cy, byte b, byte g, byte r, int radius, byte[] visited)
+    private static void StampHighlighter(byte[] pixels, int width, int height, int cx, int cy, byte b, byte g, byte r, int radius, byte[] visited, int bandLeft, int bandTop, int bandWidth)
     {
-        var top = Math.Max(0, cy - radius);
+        var bandRight = bandLeft + bandWidth - 1;
+        var top = Math.Max(bandTop, cy - radius);
         var bottom = Math.Min(height - 1, cy + radius);
         var r2 = radius * radius;
         const int alpha = 110;
@@ -785,16 +938,25 @@ internal static class AnnotationRenderer
             }
 
             var dxMax = (int)Math.Sqrt(r2 - dy2);
-            var x0 = Math.Clamp(cx - dxMax, 0, width - 1);
-            var x1 = Math.Clamp(cx + dxMax, 0, width - 1);
-            var rowStart = y * width;
-            var pixelOffset = rowStart * 4;
+            var rawX0 = cx - dxMax;
+            var rawX1 = cx + dxMax;
+            // 整个印章落在位图外：钳制后 x0==x1 会在边缘列涂出伪影色带，直接跳过。
+            if (rawX1 < bandLeft || rawX0 > bandRight)
+            {
+                continue;
+            }
+
+            var x0 = Math.Clamp(rawX0, bandLeft, bandRight);
+            var x1 = Math.Clamp(rawX1, bandLeft, bandRight);
+            var pixelOffset = y * width * 4;
+            var visitedRow = (y - bandTop) * bandWidth;
 
             for (var x = x0; x <= x1; x++)
             {
-                if (visited[rowStart + x] == 0)
+                var visitedIndex = visitedRow + (x - bandLeft);
+                if (visited[visitedIndex] == 0)
                 {
-                    visited[rowStart + x] = 1;
+                    visited[visitedIndex] = 1;
                     var idx = pixelOffset + (x * 4);
                     pixels[idx] = (byte)((pixels[idx] * invAlpha + b * alpha) / 255);
                     pixels[idx + 1] = (byte)((pixels[idx + 1] * invAlpha + g * alpha) / 255);

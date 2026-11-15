@@ -86,6 +86,12 @@ internal static class BarcodeService
                 Math.Max(1, Math.Min(height, maxY) - Math.Clamp(minY, 0, height))
             );
         }
+        catch (ReaderException)
+        {
+            // "没找到条码"是正常结果（选区里本来就没有），不是异常；
+            // 每次松开选区都会扫一次，不能让它刷日志。
+            return null;
+        }
         catch (Exception ex)
         {
             Log.Info("条码识别跳过: " + ex.Message);

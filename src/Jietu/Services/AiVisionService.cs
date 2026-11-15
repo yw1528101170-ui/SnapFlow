@@ -166,36 +166,64 @@ internal static class AiVisionService
                         continue;
                     }
 
-                    var chunk = JsonNode.Parse(payload);
-                    var choice = chunk?["choices"]?[0];
-                    var piece = choice?["delta"]?["content"]?.GetValue<string>();
-                    var chunkFinish = choice?["finish_reason"]?.GetValue<string>();
+                    // 任何合法 data 行都证明流是活的：推理型模型可能长时间只发
+                    // reasoning 增量不出正文，等 content 才重挂会卡在等首包的超时上。
+                    // 这里只重挂一次，"整体生成"的总时限语义保持不变。
+                    if (!gotContent)
+                    {
+                        linked.CancelAfter(TotalTimeout);
+                        gotContent = true;
+                    }
+
+                    // 单个 chunk 解析失败只跳过这一片：网关偶发畸形 SSE 片段时，
+                    // 不能把已经流出的整段回答替换成错误文案。
+                    string? piece = null;
+                    string? chunkFinish = null;
+                    try
+                    {
+                        var chunk = JsonNode.Parse(payload);
+                        // choices 可能为空数组：JsonNode 的下标越界会抛异常，先判空。
+                        var choice = chunk?["choices"] is JsonArray arr && arr.Count > 0 ? arr[0] : null;
+                        piece = choice?["delta"]?["content"]?.GetValue<string>();
+                        chunkFinish = choice?["finish_reason"]?.GetValue<string>();
+                    }
+                    catch (Exception ex)
+                    {
+                        // JsonException（畸形 JSON）与 InvalidOperationException（content 不是字符串，
+                        // 部分网关发 content 数组）都按"跳过该片"处理。
+                        Log.Info("AI 流式响应单个分片解析失败，已跳过：" + ex.Message);
+                    }
+
                     if (!string.IsNullOrEmpty(chunkFinish))
                     {
                         finishReason = chunkFinish;
                     }
 
-                    if (!string.IsNullOrEmpty(piece))
-                    {
-                        if (!gotContent)
-                        {
-                            // 首个内容片段到达：从“等首包”切换到“整体生成”时限。
-                            linked.CancelAfter(TotalTimeout);
-                            gotContent = true;
-                        }
-
-                        answer.Append(piece);
-                        delta?.Report(piece);
-                    }
+                if (!string.IsNullOrEmpty(piece))
+                {
+                    answer.Append(piece);
+                    delta?.Report(piece);
+                }
                 }
                 else if (!sawSse && line[0] == '{')
                 {
                     // 网关忽略了 stream:true，直接回了完整 JSON：整包读出按非流式解析，不当作错误。
                     sawSse = true;
                     var whole = line + "\n" + await reader.ReadToEndAsync(linked.Token);
-                    var node = JsonNode.Parse(whole);
-                    var full = node?["choices"]?[0]?["message"]?["content"]?.GetValue<string>();
-                    var fullFinish = node?["choices"]?[0]?["finish_reason"]?.GetValue<string>();
+                    string? full = null;
+                    string? fullFinish = null;
+                    try
+                    {
+                        var node = JsonNode.Parse(whole);
+                        var choice = node?["choices"] is JsonArray wholeArr && wholeArr.Count > 0 ? wholeArr[0] : null;
+                        full = choice?["message"]?["content"]?.GetValue<string>();
+                        fullFinish = choice?["finish_reason"]?.GetValue<string>();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Info("AI 非流式响应解析失败：" + ex.Message);
+                    }
+
                     if (!string.IsNullOrEmpty(fullFinish))
                     {
                         finishReason = fullFinish;

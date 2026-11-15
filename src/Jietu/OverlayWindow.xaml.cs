@@ -23,6 +23,9 @@ public sealed partial class OverlayWindow : Window
     private readonly List<AnnotateStroke> _redo = [];
     private readonly List<(int X, int Y)> _draft = [];
     private TaskCompletionSource<PickedShot?>? _pick;
+    // 截图会话代号：每次 PickAsync 递增。用于识别"异步初始化期间被更新的会话取代"的过期会话
+    // （快速连按截图热键时，旧会话的异步续体恢复后不得再触碰任何共享状态）。
+    private int _pickEpoch;
     private byte[] _source = [];
     private int _loupePixelX = int.MinValue;
     private int _loupePixelY;
@@ -186,6 +189,8 @@ public sealed partial class OverlayWindow : Window
 
     internal async Task<PickedShot?> PickAsync(SoftwareBitmap frame, byte[]? pixels, DisplayMonitor monitor)
     {
+        var epoch = ++_pickEpoch;
+        Microsoft.UI.Xaml.Media.ImageSource? shotSource = null;
         try
         {
             Complete(null);
@@ -232,13 +237,13 @@ public sealed partial class OverlayWindow : Window
             ClearSelection();
             try
             {
-                Shot.Source = await ImageBytes.ToBitmapSourceAsync(frame);
+                shotSource = await ImageBytes.ToBitmapSourceAsync(frame);
             }
             catch (Exception ex)
             {
                 Log.Info("直接显示截屏失败，改用图片编码：" + ex.Message);
                 var png = await ImageBytes.ToPngAsync(frame);
-                Shot.Source = await ImageBytes.PngToBitmapAsync(png);
+                shotSource = await ImageBytes.PngToBitmapAsync(png);
             }
         }
         finally
@@ -246,6 +251,16 @@ public sealed partial class OverlayWindow : Window
             frame.Dispose();
         }
 
+        if (epoch != _pickEpoch)
+        {
+            // 异步初始化期间有更新的截图会话启动（快速连按热键）：本会话作废。
+            // 不得再触碰任何共享状态——尤其不能覆盖新会话的 _pick 并 Activate，
+            // 否则新会话的 CaptureAsync 会永久挂在无人完成的 TCS 上（帧与 CTS 泄漏）。
+            // Shot.Source 的赋值也一并跳过，避免把上一帧的画面盖到新会话上。
+            return null;
+        }
+
+        Shot.Source = shotSource;
         AppWindow.MoveAndResize(new global::Windows.Graphics.RectInt32(monitor.X, monitor.Y, monitor.Width, monitor.Height));
         var pick = new TaskCompletionSource<PickedShot?>();
         _pick = pick;
@@ -965,13 +980,18 @@ public sealed partial class OverlayWindow : Window
         var sourceCopy = _source;
         var frameW = _frameWidth;
 
+        // 先在当前线程同步把小选区裁出来，再交给后台扫描。
+        // _source 与 CaptureService._frameCache 是同一个共享数组，下一次抓屏会原位覆写它；
+        // 若在后台线程里才 Crop，取消旧会话后立刻再截一张就可能读到新旧混合的撕裂数据。
+        // 选区裁剪只有微秒级开销，放这里不卡 UI。
+        var cropped = Crop(sourceCopy, frameW, rect);
+        var rectForScan = rect;
+
         Task.Run(() =>
         {
             try
             {
-                if (ct.IsCancellationRequested) return;
-                var cropped = Crop(sourceCopy, frameW, rect);
-                var result = BarcodeService.Scan(cropped, rect.Width, rect.Height);
+                var result = BarcodeService.Scan(cropped, rectForScan.Width, rectForScan.Height);
                 if (ct.IsCancellationRequested) return;
 
                 DispatcherQueue.TryEnqueue(() =>
@@ -1871,8 +1891,10 @@ public sealed partial class OverlayWindow : Window
         _loupeStream?.Dispose();
         _loupeStream = null;
         // 拾取结束：释放全屏像素缓冲与显示位图，避免 4K BGRA(约 33MB)常驻到下次截图。
-        // 条码检测等后台任务在 Complete 前已拿到 _source 的引用(数组本身不会被修改)，清空引用不影响它们。
+        // 注意 _source 与 CaptureService._frameCache 共享同一数组、下一次抓屏会被原位覆写，
+        // 因此这里必须同时取消条码后台任务（扫描数据已在派发前同步裁剪为独立副本）。
         // 下次 PickAsync 会重新赋值 _source 与 Shot.Source。
+        _barcodeCts?.Cancel();
         _source = [];
         Shot.Source = null;
         pick.TrySetResult(value);

@@ -352,6 +352,7 @@ public sealed partial class PasswordWindow
             CloseButtonText = "取消",
             XamlRoot = Content.XamlRoot,
         };
+        busyDialog.Glassify();
 
         using var cancellation = new CancellationTokenSource();
         busyDialog.CloseButtonClick += (_, _) => cancellation.Cancel();

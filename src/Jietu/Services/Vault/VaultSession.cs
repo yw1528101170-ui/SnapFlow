@@ -307,10 +307,14 @@ public sealed partial class VaultSession : IDisposable
                 byte[] file;
                 try
                 {
-                    var body = VaultCrypto.SealPayload(header, newKey, payload);
+                    // NewVaultHeader 的 CipherLength=0，必须先按实际载荷长度补齐，
+                    // 否则 SealPayload 的 AAD 一致性断言必抛——"修改主密码"永远失败。
+                    var sealedHeader = header.WithPlaintextLength(payload.Length);
+                    var body = VaultCrypto.SealPayload(sealedHeader, newKey, payload);
                     file = new byte[VaultFormat.HeaderLength + body.Length];
-                    header.ToBytes().CopyTo(file, 0);
+                    sealedHeader.ToBytes().CopyTo(file, 0);
                     body.CopyTo(file, VaultFormat.HeaderLength);
+                    header = sealedHeader;
                 }
                 finally
                 {
@@ -523,16 +527,21 @@ public sealed partial class VaultSession : IDisposable
             var payload = VaultPayloadWriter.Write(snapshot.Data);
             try
             {
-                var body = VaultCrypto.SealPayload(snapshot.Header, key, payload);
+                // 关键：用本次实际载荷长度重算 CipherLength。快照捕获时头还是
+                // 上一次成功保存的长度——任何改变 JSON 大小的编辑（新增/删除条目、
+                // 改任意字段）都会让 SealPayload 的 AAD 一致性断言抛异常，
+                // 保存管线从此永远失败、锁定时丢掉全部未落盘编辑。
+                var header = snapshot.Header.WithPlaintextLength(payload.Length);
+                var body = VaultCrypto.SealPayload(header, key, payload);
                 var file = new byte[VaultFormat.HeaderLength + body.Length];
-                snapshot.Header.ToBytes().CopyTo(file, 0);
+                header.ToBytes().CopyTo(file, 0);
                 body.CopyTo(file, VaultFormat.HeaderLength);
 
                 await VaultStore.SaveAsync(_vaultPath, file, ct).ConfigureAwait(false);
 
                 // 写盘成功后才推进当前头：失败时内存里的 nonce 不该前进，
                 // 否则重试会拿一个"从未写进磁盘"的头继续用。
-                WriteHeader(snapshot.Header);
+                WriteHeader(header);
             }
             finally
             {
@@ -759,7 +768,10 @@ public sealed partial class VaultSession : IDisposable
 
         if (DateTimeOffset.UtcNow - _lastActivity >= TimeSpan.FromMinutes(minutes))
         {
-            Lock();
+            // 与锁屏广播路径一致走 LockAsync：先把防抖窗口内的挂起编辑落盘再锁。
+            // 直接 Lock() 会把最后 400ms 防抖窗口里的修改（乃至写盘进行中的那次）
+            // 一并丢掉——空闲锁是"常规路径"，不是"来不及保存"的兜底场景。
+            _ = LockAsync();
         }
     }
 }

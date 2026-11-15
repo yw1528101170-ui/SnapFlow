@@ -211,7 +211,7 @@ internal sealed class VaultBridge : IDisposable
                     return;
                 }
 
-                var response = await HandleMessageAsync(line);
+                var response = await HandleMessageAsync(line, ct);
                 await writer.WriteLineAsync(response);
             }
         }
@@ -232,7 +232,7 @@ internal sealed class VaultBridge : IDisposable
         }
     }
 
-    private async Task<string> HandleMessageAsync(string line)
+    private async Task<string> HandleMessageAsync(string line, CancellationToken ct)
     {
         try
         {
@@ -240,7 +240,7 @@ internal sealed class VaultBridge : IDisposable
             var type = doc.RootElement.TryGetProperty("type", out var t) ? t.GetString() : null;
             return type switch
             {
-                "hello" => await HandleHelloAsync(doc.RootElement),
+                "hello" => await HandleHelloAsync(doc.RootElement, ct),
                 "status" => await StatusAsync(),
                 "get-logins" => await GetLoginsAsync(doc.RootElement),
                 "generate" => Generate(doc.RootElement),
@@ -280,7 +280,7 @@ internal sealed class VaultBridge : IDisposable
         return await tcs.Task.ConfigureAwait(false);
     }
 
-    private async Task<string> HandleHelloAsync(JsonElement root)
+    private async Task<string> HandleHelloAsync(JsonElement root, CancellationToken ct)
     {
         if (!_settings().VaultBrowserIntegration)
         {
@@ -321,10 +321,19 @@ internal sealed class VaultBridge : IDisposable
 
         _queue.TryEnqueue(() => PairRequested?.Invoke(pairId, displayName));
 
-        // 确认超时 60 秒：超时按拒绝处理。
+        // 确认超时 60 秒：超时按拒绝处理。客户端断开（ct 触发）同样立即结束等待，
+        // 不让已断开连接的配对确认占住桌面端弹窗整整 60 秒。
         var timeout = Task.Delay(60_000);
-        var finished = await Task.WhenAny(tcs.Task, timeout);
-        var accepted = finished == tcs.Task && tcs.Task.Result;
+        bool accepted;
+        try
+        {
+            var finished = await Task.WhenAny(tcs.Task, timeout).WaitAsync(ct).ConfigureAwait(false);
+            accepted = finished == tcs.Task && tcs.Task.Result;
+        }
+        catch (OperationCanceledException)
+        {
+            accepted = false;
+        }
 
         // 只清掉自己那一个槽位：若已超时并被新请求占用，不能把新请求一起清掉。
         _pairing.Abandon(pairId);

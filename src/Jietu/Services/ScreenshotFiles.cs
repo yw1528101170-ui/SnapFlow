@@ -9,6 +9,42 @@ internal static class ScreenshotFiles
     public static string TempPngPath() =>
         Path.Combine(AppPaths.Temp, Guid.NewGuid().ToString("N") + ".png");
 
+    /// <summary>
+    /// 会话内限量清理临时 PNG：只保留最近 4 份。AI 窗口的复制图片/贴图每次都写
+    /// 一个新 GUID 文件，原来只在启动时清理一次，长会话会累积数十 MB。
+    /// 删最旧的而非全部：刚写盘并放进剪贴板的文件不能动。
+    /// </summary>
+    public static void SweepTemp()
+    {
+        if (!Directory.Exists(AppPaths.Temp))
+        {
+            return;
+        }
+
+        try
+        {
+            var files = Directory.EnumerateFiles(AppPaths.Temp, "*.png")
+                .Select(f => (Path: f, Write: File.GetLastWriteTimeUtc(f)))
+                .OrderByDescending(t => t.Write)
+                .ToList();
+            for (var i = 4; i < files.Count; i++)
+            {
+                try
+                {
+                    File.Delete(files[i].Path);
+                }
+                catch (Exception ex)
+                {
+                    Log.Info("清理临时图片失败：" + ex.Message);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Info("扫描临时图片失败：" + ex.Message);
+        }
+    }
+
     public static void CleanupTemp()
     {
         if (!Directory.Exists(AppPaths.Temp))
